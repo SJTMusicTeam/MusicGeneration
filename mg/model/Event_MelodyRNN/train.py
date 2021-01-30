@@ -6,11 +6,12 @@ import optparse
 import numpy as np
 import os
 import sys
+import torch.utils.data as Data
 sys.path.append('/data2/qt/MusicGeneration/mg/model/')
 
 import utils.shared as utils
 import Event_MelodyRNN.config as config
-from utils.data import Event_Dataset
+from utils.data import Event_Dataset, MyDataset
 from Event_MelodyRNN.network import Event_Melody_RNN
 from utils.sequence import EventSeq
 import Event_MelodyRNN.config
@@ -147,7 +148,9 @@ print('-' * 70)
 
 def load_model():
     global model_config, device, learning_rate
-    model = Event_Melody_RNN(**model_config).to(device)
+    model = Event_Melody_RNN(**model_config)
+    model.load_state_dict(torch.load('basic_rnn_125.pth'))
+    model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return model, optimizer
 
@@ -179,7 +182,7 @@ print('-' * 70)
 def save_model(epoch):
     global model, optimizer, model_config, save_path
     print('Saving to', save_path+'epoch_'+str(epoch)+'.pth')
-    torch.save(model.state_dict(), 'basic_rnn_' + str(epoch) + '.pth')
+    torch.save(model.state_dict(),  save_path+'epoch_'+str(epoch+126)+'.pth')
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -198,11 +201,21 @@ last_saving_time = time.time()
 loss_function = nn.CrossEntropyLoss()
 
 
+data = dataset.batches(batch_size, window_size, stride_size)
+mydataset = MyDataset(data)
+num_workers = 0 if sys.platform.startswith('win32') else 8
+batch_gen = Data.DataLoader(mydataset,
+                            batch_size,
+                            collate_fn=dataset.Batchify,
+                            shuffle=True,
+                            drop_last=True,
+                            num_workers=num_workers)
+
 for epoch in range(epochs):
     try:
-        batch_gen = dataset.batches(batch_size, window_size, stride_size)
         l_sum, n = 0, 0
         for iteration, events in enumerate(batch_gen):
+            # print(events.shape)
             events.dtype = np.int16
             events = torch.LongTensor(events).to(device)
             assert events.shape[0] == window_size
@@ -229,11 +242,13 @@ for epoch in range(epochs):
             #     writer.add_scalar('model/loss', loss.item(), iteration)
             #     writer.add_scalar('model/norm', norm.item(), iteration)
 
-            if (iteration+1)%300 == 0:
+            if (iteration+1)%100 == 0:
                 print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
 
         # if (epoch+1) % saving_interval == 0:
+        print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
         last_saving_time = time.time()
 
     except KeyboardInterrupt:
         save_model(epoch)
+        break

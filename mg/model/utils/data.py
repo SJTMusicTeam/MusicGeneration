@@ -6,6 +6,18 @@ from progress.bar import Bar
 import utils.shared as utils
 from utils.sequence import EventSeq, ControlSeq
 
+class MyDataset(torch.utils.data.Dataset):
+    def __init__(self, seqs):
+        self.seqs = seqs
+
+    def __getitem__(self, index):
+        return self.seqs[index]
+
+    def __len__(self):
+        return len(self.seqs)
+
+
+
 class Event_Dataset:
     def __init__(self, root, verbose=False):
         assert os.path.isdir(root), root
@@ -26,17 +38,18 @@ class Event_Dataset:
         indeces = [(i, (j, j + window_size) )
                    for i, seqlen in enumerate(self.seqlens)
                    for j in range(0, seqlen - window_size, stride_size)]
+        return indeces
         #print(len(indeces)) #2,452,443
-        idx = np.random.permutation(len(indeces))
-        eventseq_batch = []
-        for k in range(len(indeces)//batch_size):
-            for ii in range(k*batch_size, k*batch_size+batch_size):
-                i, (start, end) = indeces[idx[ii]]
-                eventseq = self.samples[i]
-                eventseq = eventseq[start:end]
-                eventseq_batch.append(eventseq)
-            yield np.stack(eventseq_batch, axis=1)
-            eventseq_batch.clear()
+        # idx = np.random.permutation(len(indeces))
+        # eventseq_batch = []
+        # for k in range(len(indeces)//batch_size):
+        #     for ii in range(k*batch_size, k*batch_size+batch_size):
+        #         i, (start, end) = indeces[idx[ii]]
+        #         eventseq = self.samples[i]
+        #         eventseq = eventseq[start:end]
+        #         eventseq_batch.append(eventseq)
+        #     yield np.stack(eventseq_batch, axis=1)
+        #     eventseq_batch.clear()
         # while True:
         #     eventseq_batch = []
         #     n = 0
@@ -50,6 +63,14 @@ class Event_Dataset:
         #             yield np.stack(eventseq_batch, axis=1)
         #             eventseq_batch.clear()
         #             n = 0
+
+    def Batchify(self,data):
+        eventseq_batch = []
+        for i, (start, end) in data:
+            eventseq = self.samples[i]
+            eventseq = eventseq[start:end]
+            eventseq_batch.append(eventseq)
+        return np.stack(eventseq_batch, axis=1)
 
     def __repr__(self):
         return (f'Dataset(root="{self.root}", '
