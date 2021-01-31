@@ -149,7 +149,7 @@ print('-' * 70)
 def load_model():
     global model_config, device, learning_rate
     model = Event_Melody_RNN(**model_config)
-    model.load_state_dict(torch.load('basic_rnn_125.pth'))
+    model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_271.pth'))
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return model, optimizer
@@ -182,7 +182,7 @@ print('-' * 70)
 def save_model(epoch):
     global model, optimizer, model_config, save_path
     print('Saving to', save_path+'epoch_'+str(epoch)+'.pth')
-    torch.save(model.state_dict(),  save_path+'epoch_'+str(epoch+126)+'.pth')
+    torch.save(model.state_dict(),  save_path+'epoch_'+str(epoch+272)+'.pth')
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -248,6 +248,7 @@ for epoch in range(epochs):
         # if (epoch+1) % saving_interval == 0:
         print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
         last_saving_time = time.time()
+        save_model(epoch)
 
     except KeyboardInterrupt:
         save_model(epoch)

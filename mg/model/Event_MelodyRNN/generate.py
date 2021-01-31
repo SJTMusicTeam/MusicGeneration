@@ -1,12 +1,15 @@
 import torch
 import numpy as np
 import os
-import sys
 import optparse
-import utils
-from PerformanceRNN.config import device, model as model_config
-from PerformanceRNN.network import PerformanceRNN
+import sys
+sys.path.append('/data2/qt/MusicGeneration/mg/model/')
+
+import Event_MelodyRNN.config as config
+from Event_MelodyRNN.config import device
+from Event_MelodyRNN.network import Event_Melody_RNN
 from utils.sequence import EventSeq, Control, ControlSeq
+import utils.shared as utils
 
 # pylint: disable=E1101,E1102
 
@@ -17,37 +20,38 @@ from utils.sequence import EventSeq, Control, ControlSeq
 def getopt():
     parser = optparse.OptionParser()
 
-    parser.add_option('-c', '--control',
-                      dest='control',
-                      type='string',
-                      default=None,
-                      help=('control or a processed data file path, '
-                            'e.g., "PITCH_HISTOGRAM;NOTE_DENSITY" like '
-                            '"2,0,1,1,0,1,0,1,1,0,0,1;4", or '
-                            '";3" (which gives all pitches the same probability), '
-                            'or "/path/to/processed/midi/file.data" '
-                            '(uses control sequence from the given processed data)'))
+    # parser.add_option('-c', '--control',
+    #                   dest='control',
+    #                   type='string',
+    #                   default=None,
+    #                   help=('control or a processed data file path, '
+    #                         'e.g., "PITCH_HISTOGRAM;NOTE_DENSITY" like '
+    #                         '"2,0,1,1,0,1,0,1,1,0,0,1;4", or '
+    #                         '";3" (which gives all pitches the same probability), '
+    #                         'or "/path/to/processed/midi/file.data" '
+    #                         '(uses control sequence from the given processed data)'))
 
     parser.add_option('-b', '--batch-size',
                       dest='batch_size',
                       type='int',
                       default=8)
 
-    parser.add_option('-s', '--session',
-                      dest='sess_path',
+    parser.add_option('-s', '--save_path',
+                      dest='save_path',
                       type='string',
-                      default='save/train.sess',
-                      help='session file containing the trained model')
+                      default='/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_271.pth',
+                      #default='/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_128.pth',
+                      help = 'pth file containing the trained model')
 
     parser.add_option('-o', '--output-dir',
                       dest='output_dir',
                       type='string',
-                      default='output/')
+                      default='/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/output/')
 
     parser.add_option('-l', '--max-length',
                       dest='max_len',
                       type='int',
-                      default=0)
+                      default=10000)
 
     parser.add_option('-g', '--greedy-ratio',
                       dest='greedy_ratio',
@@ -82,11 +86,10 @@ opt = getopt()
 # ------------------------------------------------------------------------
 
 output_dir = opt.output_dir
-sess_path = opt.sess_path
+save_path = opt.save_path
 batch_size = opt.batch_size
 max_len = opt.max_len
 greedy_ratio = opt.greedy_ratio
-control = opt.control
 use_beam_search = opt.beam_size > 0
 stochastic_beam_search = opt.stochastic_beam_search
 beam_size = opt.beam_size
@@ -98,57 +101,18 @@ if use_beam_search:
 else:
     beam_size = 'DISABLED'
 
-assert os.path.isfile(sess_path), f'"{sess_path}" is not a file'
-
-if control is not None:
-    if os.path.isfile(control) or os.path.isdir(control):
-        if os.path.isdir(control):
-            files = list(utils.find_files_by_extensions(control))
-            assert len(files) > 0, f'no file in "{control}"'
-            control = np.random.choice(files)
-        _, compressed_controls = torch.load(control)
-        controls = ControlSeq.recover_compressed_array(compressed_controls)
-        if max_len == 0:
-            max_len = controls.shape[0]
-        controls = torch.tensor(controls, dtype=torch.float32)
-        controls = controls.unsqueeze(1).repeat(1, batch_size, 1).to(device)
-        control = f'control sequence from "{control}"'
-
-    else:
-        pitch_histogram, note_density = control.split(';')
-        pitch_histogram = list(filter(len, pitch_histogram.split(',')))
-        if len(pitch_histogram) == 0:
-            pitch_histogram = np.ones(12) / 12
-        else:
-            pitch_histogram = np.array(list(map(float, pitch_histogram)))
-            assert pitch_histogram.size == 12
-            assert np.all(pitch_histogram >= 0)
-            pitch_histogram = pitch_histogram / pitch_histogram.sum() \
-                if pitch_histogram.sum() else np.ones(12) / 12
-        note_density = int(note_density)
-        assert note_density in range(len(ControlSeq.note_density_bins))
-        control = Control(pitch_histogram, note_density)
-        controls = torch.tensor(control.to_array(), dtype=torch.float32)
-        controls = controls.repeat(1, batch_size, 1).to(device)
-        control = repr(control)
-
-else:
-    controls = None
-    control = 'NONE'
-
-assert max_len > 0, 'either max length or control sequence length should be given'
+assert os.path.isfile(save_path), f'"{save_path}" is not a file'
 
 # ------------------------------------------------------------------------
 
 print('-' * 70)
-print('Session:', sess_path)
+print('Saved model path:', save_path)
 print('Batch size:', batch_size)
 print('Max length:', max_len)
 print('Greedy ratio:', greedy_ratio)
 print('Beam size:', beam_size)
 print('Beam search stochastic:', stochastic_beam_search)
 print('Output directory:', output_dir)
-print('Controls:', control)
 print('Temperature:', temperature)
 print('Init zero:', init_zero)
 print('-' * 70)
@@ -157,10 +121,12 @@ print('-' * 70)
 # ========================================================================
 # Generating
 # ========================================================================
-
-state = torch.load(sess_path, map_location=device)
-model = PerformanceRNN(**state['model_config']).to(device)
-model.load_state_dict(state['model_state'])
+model_config = config.model
+print(model_config)#{'init_dim': 32, 'event_dim': 308, 'hidden_dim': 256, 'rnn_layers': 2, 'dropout': 0.5}
+model = Event_Melody_RNN(**model_config)
+model.load_state_dict(torch.load(save_path))
+#device = torch.device('cpu')
+model.to(device)
 model.eval()
 print(model)
 print('-' * 70)
@@ -173,13 +139,11 @@ else:
 with torch.no_grad():
     if use_beam_search:
         outputs = model.beam_search(init, max_len, beam_size,
-                                    controls=controls,
                                     temperature=temperature,
                                     stochastic=stochastic_beam_search,
                                     verbose=True)
     else:
         outputs = model.generate(init, max_len,
-                                 controls=controls,
                                  greedy=greedy_ratio,
                                  temperature=temperature,
                                  verbose=True)
