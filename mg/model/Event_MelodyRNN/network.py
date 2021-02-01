@@ -47,12 +47,15 @@ class Event_Melody_RNN(nn.Module):
         # One step forward
         # batch_size = event.shape[1]
         input = self.event_embedding(event)
-        embedding_packed = nn.utils.rnn.pack_padded_sequence(input, lengths, batch_first=True)
+        if lengths is not None:
+            input = nn.utils.rnn.pack_padded_sequence(input, lengths, batch_first=True)
         # packed_output, self.state = self.encoder(embedding_packed, state)  # output, (h, c)
-        packed_output, _ = self.rnn(embedding_packed, hidden)#(batch, seqlen, dim)
-        hidden, inputs_size = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+        output, _ = self.rnn(input, hidden)#(batch, seqlen, dim)
 
-        output = flatten_padded_sequences(hidden, lengths)
+        if lengths is not None:
+            hidden, _ = nn.utils.rnn.pad_packed_sequence(output, batch_first=True)
+
+        output = flatten_padded_sequences(output, lengths)
         # print(output.shape)
         # output = hidden.permute(1, 0, 2).contiguous()#(seqlen, batch, dim)
         # output = output.view(batch_size, -1).unsqueeze(0)
@@ -82,12 +85,9 @@ class Event_Melody_RNN(nn.Module):
     # model.generate(init, window_size, events=events[:-1],
     #                              teacher_forcing_ratio=teacher_forcing_ratio, output_type='logit')
 
-    def train(self, init, events, lengths):
+    def train(self, init, events, lengths=None):
         # init [batch_size, init_dim]
         # events [steps, batch_size] indeces
-        # controls [1 or steps, batch_size, control_dim]
-        # batch_size = init.shape[0]
-        # event = self.get_primary_event(batch_size)
         hidden = self.init_to_hidden(init)
 
         output = self.SeqForward(events, hidden, lengths) #forward one step

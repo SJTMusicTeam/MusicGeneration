@@ -8,6 +8,9 @@ from utils.sequence import EventSeq, ControlSeq
 
 def flatten_padded_sequences(outs, lengths):
     batch, mx_length, vocab_size = outs.shape
+    if lengths is None:
+        # print(outs.shape)
+        return outs[:-1,:,:].view(-1, vocab_size)
     res = []
     for i in range(batch):
         res.append(outs[i, :lengths[i] - 1, :].squeeze(0))
@@ -22,13 +25,10 @@ def SeqBatchify(inputs):
     for i in range(len(inputs)):
         mx = lengths[i]
         X[i, :mx] = np.array(inputs[i])
-    # X.dtype = np.int16
-    # print(f'X={X}')
     labels = []
     for i in range(len(inputs)):
         labels.append( np.array(X[i])[1:lengths[i]] )
     Y = np.concatenate(labels)
-    # print(f'Y={Y}')
     return X ,Y, lengths
 
 
@@ -89,6 +89,16 @@ class Event_Dataset:
         #             yield np.stack(eventseq_batch, axis=1)
         #             eventseq_batch.clear()
         #             n = 0
+
+    def SegBatchify(self,data):
+        eventseq_batch = []
+        labels = []
+        for i, (start, end) in data:
+            eventseq = self.samples[i]
+            eventseq = eventseq[start:end]
+            eventseq_batch.append(eventseq)
+            labels.append(eventseq[:-1])
+        return np.stack(eventseq_batch, axis=1), np.stack(labels)
 
     def Batchify(self,data):
         eventseq_batch = []

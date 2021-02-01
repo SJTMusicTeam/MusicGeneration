@@ -181,8 +181,8 @@ print('-' * 70)
 
 def save_model(epoch):
     global model, optimizer, model_config, save_path
-    print('Saving to', save_path+'Seq_epoch_'+str(epoch)+'.pth')
-    torch.save(model.state_dict(),  save_path+'Sqe_epoch_'+str(epoch)+'.pth')
+    print('Saving to', save_path+config.train_mode+'_epoch_'+str(epoch)+'.pth')
+    torch.save(model.state_dict(),  save_path+config.train_mode+'_epoch_'+str(epoch)+'.pth')
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -200,7 +200,7 @@ def save_model(epoch):
 last_saving_time = time.time()
 loss_function = nn.CrossEntropyLoss()
 
-if config.train_mode == 'segment':
+if config.train_mode == 'window':
 
     data = dataset.batches(batch_size, window_size, stride_size)
     mydataset = MyDataset(data)
@@ -214,7 +214,7 @@ if config.train_mode == 'segment':
 
     for epoch in range(epochs):
         try:
-            l_sum, n = 0, 0
+            l_sum = 0
             for iteration, events in enumerate(batch_gen):
                 # print(events.shape)
                 events.dtype = np.int16
@@ -231,7 +231,6 @@ if config.train_mode == 'segment':
                 loss.backward()
 
                 l_sum += loss.item()
-                n += batch_size
 
                 norm = utils.compute_gradient_norm(model.parameters())
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
@@ -247,7 +246,7 @@ if config.train_mode == 'segment':
                     print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
 
             # if (epoch+1) % saving_interval == 0:
-            print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
+            print(f'epoch {epoch}, ave-loss: {l_sum}, epoch time: {time.time()-last_saving_time}')
             last_saving_time = time.time()
             save_model(epoch)
 
@@ -268,7 +267,7 @@ elif config.train_mode=='sequence':
 
     for epoch in range(epochs):
         try:
-            l_sum, n = 0, 0
+            l_sum = 0
             for iteration, (events, label, lengths) in enumerate(batch_gen):
                 # print(events.shape)
                 # events.dtype = np.int16
@@ -287,7 +286,6 @@ elif config.train_mode=='sequence':
                 loss.backward()
 
                 l_sum += loss.item()
-                n += label.shape[0]
 
                 norm = utils.compute_gradient_norm(model.parameters())
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
@@ -297,7 +295,61 @@ elif config.train_mode=='sequence':
                 if (iteration+1)% 30 == 0:
                     print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
 
-            print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
+            print(f'epoch {epoch}, ave-loss: {l_sum}, epoch time: {time.time()-last_saving_time}')
+            last_saving_time = time.time()
+            save_model(epoch)
+
+        except KeyboardInterrupt:
+            save_model(epoch)
+            break
+elif config.train_mode=='segment':
+    window_size = np.min(dataset.seqlens)
+    stride_size = window_size//5
+    data = dataset.batches(batch_size, window_size, stride_size)
+    print(f'Window Size = {window_size}')
+    print(f'Stride = {stride_size}')
+    print(f'Iteration={len(data)//batch_size}')
+    mydataset = MyDataset(data)
+    num_workers = 0 if sys.platform.startswith('win32') else 8
+    batch_gen = Data.DataLoader(mydataset,
+                                batch_size,
+                                collate_fn=dataset.SegBatchify,
+                                shuffle=True,
+                                drop_last=True,
+                                num_workers=num_workers)
+
+    for epoch in range(epochs):
+        try:
+            l_sum = 0
+            for iteration, (events, label) in enumerate(batch_gen):
+                # print(events.shape)
+                events.dtype = np.int16
+                label.dtype = np.int16
+                events = torch.LongTensor(events).to(device)
+                label = torch.LongTensor(label).to(device)
+
+                init = torch.randn(batch_size, model.init_dim).to(device)
+                # print(events.shape)
+                # print(events)
+                # print(label.shape)
+                outputs = model.train(init, events=events)
+                init.detach_()
+                loss = loss_function(outputs.view(-1, event_dim), label.view(-1))
+                model.zero_grad()
+
+                loss.backward()
+
+                l_sum += loss.sum().item()
+
+                norm = utils.compute_gradient_norm(model.parameters())
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
+
+                optimizer.step()
+
+                if (iteration+1)% 30 == 0:
+                    print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
+
+            print(f'epoch {epoch}, ave-loss: {l_sum}, epoch time: {time.time()-last_saving_time}')
             last_saving_time = time.time()
             save_model(epoch)
 
