@@ -4,7 +4,7 @@ from utils.sequence import EventSeq, ControlSeq
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('cpu')
 train_mode = "segment"#segment, window, sequence
-
+limlen = 5000
 model = {
     'init_dim': 32,
     'event_dim': EventSeq.dim(),
@@ -15,7 +15,7 @@ model = {
 
 train = {
     'learning_rate': 0.001,
-    'batch_size': 800,
+    'batch_size': 90,
     'window_size': 200,
     'stride_size': 10,
     'use_transposition': False,

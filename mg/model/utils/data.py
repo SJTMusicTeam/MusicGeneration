@@ -9,8 +9,7 @@ from utils.sequence import EventSeq, ControlSeq
 def flatten_padded_sequences(outs, lengths):
     batch, mx_length, vocab_size = outs.shape
     if lengths is None:
-        # print(outs.shape)
-        return outs[:-1,:,:].view(-1, vocab_size)
+        return outs.contiguous().view(-1, vocab_size)
     res = []
     for i in range(batch):
         res.append(outs[i, :lengths[i] - 1, :].squeeze(0))
@@ -45,7 +44,7 @@ class MyDataset(torch.utils.data.Dataset):
 
 
 class Event_Dataset:
-    def __init__(self, root, verbose=False):
+    def __init__(self, root, limlen=None, verbose=False):
         assert os.path.isdir(root), root
         paths = utils.find_files_by_extensions(root, ['.data'])
         # print(paths)
@@ -56,9 +55,18 @@ class Event_Dataset:
             paths = Bar(root).iter(list(paths))
         for path in paths:
             eventseq = torch.load(path)
-            self.samples.append(eventseq)
-            self.seqlens.append(len(eventseq))
+            if len(eventseq) >= limlen:
+                self.samples.append(eventseq)
+                self.seqlens.append(len(eventseq))
         self.avglen = np.mean(self.seqlens)
+
+    def count(self, v):
+        a = sorted(self.seqlens, reverse=False)
+        #print(a[:100])
+        x = np.searchsorted(a, v, side='left', sorter=None)
+        print(f'{x}/{len(a)}')
+        print(f'the ratio of length of events less than {v} is {100*x/len(a)}%')
+        return 100*x / len(a)
 
     def batches(self, batch_size, window_size, stride_size):
         indeces = [(i, (j, j + window_size) )
@@ -96,9 +104,10 @@ class Event_Dataset:
         for i, (start, end) in data:
             eventseq = self.samples[i]
             eventseq = eventseq[start:end]
-            eventseq_batch.append(eventseq)
-            labels.append(eventseq[:-1])
-        return np.stack(eventseq_batch, axis=1), np.stack(labels)
+            eventseq_batch.append(eventseq[:-1])
+            labels.append(eventseq[1:])
+            # print(eventseq_batch[-1][:10],labels[-1][:10])
+        return np.stack(eventseq_batch, axis=0), np.stack(labels,axis=0)
 
     def Batchify(self,data):
         eventseq_batch = []

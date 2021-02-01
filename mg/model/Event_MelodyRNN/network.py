@@ -45,17 +45,16 @@ class Event_Melody_RNN(nn.Module):
 
     def SeqForward(self, event, hidden=None, lengths=None):
         # One step forward
-        # batch_size = event.shape[1]
-        input = self.event_embedding(event)
+        input = self.event_embedding(event)# (step, batch_size, dim)
         if lengths is not None:
             input = nn.utils.rnn.pack_padded_sequence(input, lengths, batch_first=True)
         # packed_output, self.state = self.encoder(embedding_packed, state)  # output, (h, c)
-        output, _ = self.rnn(input, hidden)#(batch, seqlen, dim)
+        output, _ = self.rnn(input, hidden)#(step, batch, dim)
 
         if lengths is not None:
-            hidden, _ = nn.utils.rnn.pad_packed_sequence(output, batch_first=True)
+            output, _ = nn.utils.rnn.pad_packed_sequence(output, batch_first=True)
 
-        output = flatten_padded_sequences(output, lengths)
+        output = flatten_padded_sequences(output.permute(1,0,2), lengths)
         # print(output.shape)
         # output = hidden.permute(1, 0, 2).contiguous()#(seqlen, batch, dim)
         # output = output.view(batch_size, -1).unsqueeze(0)
@@ -87,10 +86,10 @@ class Event_Melody_RNN(nn.Module):
 
     def train(self, init, events, lengths=None):
         # init [batch_size, init_dim]
-        # events [steps, batch_size] indeces
+        # events [batch_size, steps] indeces
         hidden = self.init_to_hidden(init)
 
-        output = self.SeqForward(events, hidden, lengths) #forward one step
+        output = self.SeqForward(events.permute(1, 0), hidden, lengths) #forward one step
 
         return output
 

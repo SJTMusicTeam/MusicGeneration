@@ -92,6 +92,11 @@ def get_options():
                       action='store_true',
                       default=False)
 
+    parser.add_option('-q', '--limit-length',
+                      dest='limlen',
+                      type='int',
+                      default=config.limlen)
+
     return parser.parse_args()[0]
 
 options = get_options()
@@ -121,6 +126,7 @@ model_params = utils.params2dict(options.model_params)
 model_config.update(model_params)
 # print('model_config_after: ', model_config)
 device = config.device
+limlen = config.limlen
 
 print('-' * 70)
 
@@ -149,15 +155,15 @@ print('-' * 70)
 def load_model():
     global model_config, device, learning_rate
     model = Event_Melody_RNN(**model_config)
-    #model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_364.pth'))
+    # model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/segment_epoch_27.pth'))
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return model, optimizer
 
 
-def load_dataset():
+def load_dataset(limlen):
     global data_path
-    dataset = Event_Dataset(data_path, verbose=True)
+    dataset = Event_Dataset(data_path, limlen, verbose=True)
     dataset_size = len(dataset.samples)
     assert dataset_size > 0
     return dataset
@@ -171,7 +177,7 @@ print('-' * 70)
 
 print('Loading dataset')
 # print(os.path.isdir(data_path))
-dataset = load_dataset()
+dataset = load_dataset(limlen)
 print(dataset)
 
 print('-' * 70)
@@ -320,27 +326,26 @@ elif config.train_mode=='segment':
 
     for epoch in range(epochs):
         try:
-            l_sum = 0
+            l_sum, n = 0, 0
             for iteration, (events, label) in enumerate(batch_gen):
                 # print(events.shape)
                 events.dtype = np.int16
                 label.dtype = np.int16
                 events = torch.LongTensor(events).to(device)
                 label = torch.LongTensor(label).to(device)
-
                 init = torch.randn(batch_size, model.init_dim).to(device)
                 # print(events.shape)
-                # print(events)
                 # print(label.shape)
                 outputs = model.train(init, events=events)
-                init.detach_()
+                # init.detach_()
+                # print(outputs.shape)
                 loss = loss_function(outputs.view(-1, event_dim), label.view(-1))
                 model.zero_grad()
 
                 loss.backward()
 
-                l_sum += loss.sum().item()
-
+                l_sum += loss.item()
+                n += 1
                 norm = utils.compute_gradient_norm(model.parameters())
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
 
@@ -349,7 +354,7 @@ elif config.train_mode=='segment':
                 if (iteration+1)% 30 == 0:
                     print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
 
-            print(f'epoch {epoch}, ave-loss: {l_sum}, epoch time: {time.time()-last_saving_time}')
+            print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
             last_saving_time = time.time()
             save_model(epoch)
 
