@@ -25,7 +25,9 @@ check_shellcheck*
 *.vim
 *.swp
 *.log
-
+*.midi
+*.mid
+*.pth
 # recipe related
 egs*/*/*/data*
 egs*/*/*/downloads
