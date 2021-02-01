@@ -2,6 +2,8 @@ import torch
 from utils.sequence import EventSeq, ControlSeq
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+#device = torch.device('cpu')
+train_mode = "sequence"#segment
 
 model = {
     'init_dim': 32,
@@ -13,7 +15,7 @@ model = {
 
 train = {
     'learning_rate': 0.001,
-    'batch_size': 2048,
+    'batch_size': 8,
     'window_size': 200,
     'stride_size': 10,
     'use_transposition': False,

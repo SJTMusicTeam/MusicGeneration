@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical, Gumbel
-
+from utils.data import flatten_padded_sequences
 from collections import namedtuple
 import numpy as np
 from progress.bar import Bar
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from Event_MelodyRNN.config import device
+#device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class Event_Melody_RNN(nn.Module):
     def __init__(self, init_dim, event_dim, hidden_dim,
                  rnn_layers=2, dropout=0.5):
@@ -27,7 +27,8 @@ class Event_Melody_RNN(nn.Module):
 
         self.rnn = nn.GRU(self.event_dim, self.hidden_dim,
                           num_layers=rnn_layers, dropout=dropout)
-        self.output_fc = nn.Linear(hidden_dim * rnn_layers, self.output_dim)
+        #self.output_fc = nn.Linear(hidden_dim * rnn_layers, self.output_dim)
+        self.output_fc = nn.Linear(hidden_dim, self.output_dim)
         self.output_fc_activation = nn.Softmax(dim=-1)
 
     def forward(self, event, hidden=None):
@@ -41,6 +42,22 @@ class Event_Melody_RNN(nn.Module):
         output = output.view(batch_size, -1).unsqueeze(0)
         output = self.output_fc(output)
         return output, hidden
+
+    def SeqForward(self, event, hidden=None, lengths=None):
+        # One step forward
+        # batch_size = event.shape[1]
+        input = self.event_embedding(event)
+        embedding_packed = nn.utils.rnn.pack_padded_sequence(input, lengths, batch_first=True)
+        # packed_output, self.state = self.encoder(embedding_packed, state)  # output, (h, c)
+        packed_output, _ = self.rnn(embedding_packed, hidden)#(batch, seqlen, dim)
+        hidden, inputs_size = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+
+        output = flatten_padded_sequences(hidden, lengths)
+        # print(output.shape)
+        # output = hidden.permute(1, 0, 2).contiguous()#(seqlen, batch, dim)
+        # output = output.view(batch_size, -1).unsqueeze(0)
+        output = self.output_fc(output)#(tot_len, dim)
+        return output
 
 
     def get_primary_event(self, batch_size):
@@ -64,6 +81,20 @@ class Event_Melody_RNN(nn.Module):
 
     # model.generate(init, window_size, events=events[:-1],
     #                              teacher_forcing_ratio=teacher_forcing_ratio, output_type='logit')
+
+    def train(self, init, events, lengths):
+        # init [batch_size, init_dim]
+        # events [steps, batch_size] indeces
+        # controls [1 or steps, batch_size, control_dim]
+        # batch_size = init.shape[0]
+        # event = self.get_primary_event(batch_size)
+        hidden = self.init_to_hidden(init)
+
+        output = self.SeqForward(events, hidden, lengths) #forward one step
+
+        return output
+
+
     def generate(self, init, steps, events=None, greedy=1.0,
                  temperature=1.0, teacher_forcing_ratio=1.0, output_type='index', verbose=False):
         # init [batch_size, init_dim]

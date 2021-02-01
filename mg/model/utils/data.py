@@ -6,6 +6,32 @@ from progress.bar import Bar
 import utils.shared as utils
 from utils.sequence import EventSeq, ControlSeq
 
+def flatten_padded_sequences(outs, lengths):
+    batch, mx_length, vocab_size = outs.shape
+    res = []
+    for i in range(batch):
+        res.append(outs[i, :lengths[i] - 1, :].squeeze(0))
+    return torch.cat(res, 0)
+
+def SeqBatchify(inputs):
+    #print(inputs)
+    inputs = sorted(inputs, key=lambda i: len(i), reverse=True)
+    lengths = np.array([len(item) for item in inputs])
+    mx_length = np.max(lengths)
+    X = np.zeros((len(inputs), mx_length),dtype=np.int16)
+    for i in range(len(inputs)):
+        mx = lengths[i]
+        X[i, :mx] = np.array(inputs[i])
+    # X.dtype = np.int16
+    # print(f'X={X}')
+    labels = []
+    for i in range(len(inputs)):
+        labels.append( np.array(X[i])[1:lengths[i]] )
+    Y = np.concatenate(labels)
+    # print(f'Y={Y}')
+    return X ,Y, lengths
+
+
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, seqs):
         self.seqs = seqs

@@ -11,7 +11,7 @@ sys.path.append('/data2/qt/MusicGeneration/mg/model/')
 
 import utils.shared as utils
 import Event_MelodyRNN.config as config
-from utils.data import Event_Dataset, MyDataset
+from utils.data import Event_Dataset, MyDataset, SeqBatchify
 from Event_MelodyRNN.network import Event_Melody_RNN
 from utils.sequence import EventSeq
 import Event_MelodyRNN.config
@@ -145,11 +145,11 @@ print('-' * 70)
 # ========================================================================
 # Load model and dataset
 # ========================================================================
-
+#device = torch.device('cpu')
 def load_model():
     global model_config, device, learning_rate
     model = Event_Melody_RNN(**model_config)
-    model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_271.pth'))
+    #model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_364.pth'))
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return model, optimizer
@@ -181,8 +181,8 @@ print('-' * 70)
 
 def save_model(epoch):
     global model, optimizer, model_config, save_path
-    print('Saving to', save_path+'epoch_'+str(epoch)+'.pth')
-    torch.save(model.state_dict(),  save_path+'epoch_'+str(epoch+272)+'.pth')
+    print('Saving to', save_path+'Seq_epoch_'+str(epoch)+'.pth')
+    torch.save(model.state_dict(),  save_path+'Sqe_epoch_'+str(epoch)+'.pth')
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -200,56 +200,109 @@ def save_model(epoch):
 last_saving_time = time.time()
 loss_function = nn.CrossEntropyLoss()
 
+if config.train_mode == 'segment':
 
-data = dataset.batches(batch_size, window_size, stride_size)
-mydataset = MyDataset(data)
-num_workers = 0 if sys.platform.startswith('win32') else 8
-batch_gen = Data.DataLoader(mydataset,
-                            batch_size,
-                            collate_fn=dataset.Batchify,
-                            shuffle=True,
-                            drop_last=True,
-                            num_workers=num_workers)
+    data = dataset.batches(batch_size, window_size, stride_size)
+    mydataset = MyDataset(data)
+    num_workers = 0 if sys.platform.startswith('win32') else 8
+    batch_gen = Data.DataLoader(mydataset,
+                                batch_size,
+                                collate_fn=dataset.Batchify,
+                                shuffle=True,
+                                drop_last=True,
+                                num_workers=num_workers)
 
-for epoch in range(epochs):
-    try:
-        l_sum, n = 0, 0
-        for iteration, events in enumerate(batch_gen):
-            # print(events.shape)
-            events.dtype = np.int16
-            events = torch.LongTensor(events).to(device)
-            assert events.shape[0] == window_size
+    for epoch in range(epochs):
+        try:
+            l_sum, n = 0, 0
+            for iteration, events in enumerate(batch_gen):
+                # print(events.shape)
+                events.dtype = np.int16
+                events = torch.LongTensor(events).to(device)
+                assert events.shape[0] == window_size
 
-            init = torch.randn(batch_size, model.init_dim).to(device)
-            outputs = model.generate(init, window_size, events=events[:-1],
-                                     teacher_forcing_ratio=teacher_forcing_ratio, output_type='logit')
-            assert outputs.shape[:2] == events.shape[:2]
+                init = torch.randn(batch_size, model.init_dim).to(device)
+                outputs = model.generate(init, window_size, events=events[:-1],
+                                         teacher_forcing_ratio=teacher_forcing_ratio, output_type='logit')
+                assert outputs.shape[:2] == events.shape[:2]
 
-            loss = loss_function(outputs.view(-1, event_dim), events.view(-1))
-            model.zero_grad()
-            loss.backward()
+                loss = loss_function(outputs.view(-1, event_dim), events.view(-1))
+                model.zero_grad()
+                loss.backward()
 
-            l_sum += loss.item()
-            n += batch_size
+                l_sum += loss.item()
+                n += batch_size
 
-            norm = utils.compute_gradient_norm(model.parameters())
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
-            #nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                norm = utils.compute_gradient_norm(model.parameters())
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
+                #nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-            optimizer.step()
+                optimizer.step()
 
-            # if enable_logging:
-            #     writer.add_scalar('model/loss', loss.item(), iteration)
-            #     writer.add_scalar('model/norm', norm.item(), iteration)
+                # if enable_logging:
+                #     writer.add_scalar('model/loss', loss.item(), iteration)
+                #     writer.add_scalar('model/norm', norm.item(), iteration)
 
-            if (iteration+1)%100 == 0:
-                print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
+                if (iteration+1)%100 == 0:
+                    print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
 
-        # if (epoch+1) % saving_interval == 0:
-        print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
-        last_saving_time = time.time()
-        save_model(epoch)
+            # if (epoch+1) % saving_interval == 0:
+            print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
+            last_saving_time = time.time()
+            save_model(epoch)
 
-    except KeyboardInterrupt:
-        save_model(epoch)
-        break
+        except KeyboardInterrupt:
+            save_model(epoch)
+            break
+
+elif config.train_mode=='sequence':
+    #data = dataset.batches(batch_size, window_size, stride_size)
+    mydataset = MyDataset(dataset.samples)
+    num_workers = 0 if sys.platform.startswith('win32') else 8
+    batch_gen = Data.DataLoader(mydataset,
+                                batch_size,
+                                collate_fn=SeqBatchify,
+                                shuffle=True,
+                                drop_last=True,
+                                num_workers=num_workers)
+
+    for epoch in range(epochs):
+        try:
+            l_sum, n = 0, 0
+            for iteration, (events, label, lengths) in enumerate(batch_gen):
+                # print(events.shape)
+                # events.dtype = np.int16
+                events = torch.LongTensor(events).to(device)
+                label = torch.LongTensor(label).to(device)
+
+                init = torch.randn(batch_size, model.init_dim).to(device)
+                # print(events.shape)
+                # print(events)
+                # print(label.shape)
+                outputs = model.train(init, events=events, lengths=lengths)
+                init.detach_()
+                # print(outputs.shape)
+                loss = loss_function(outputs.view(-1, event_dim), label)
+                model.zero_grad()
+                loss.backward()
+
+                l_sum += loss.item()
+                n += label.shape[0]
+
+                norm = utils.compute_gradient_norm(model.parameters())
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
+
+                optimizer.step()
+
+                if (iteration+1)% 30 == 0:
+                    print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
+
+            print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
+            last_saving_time = time.time()
+            save_model(epoch)
+
+        except KeyboardInterrupt:
+            save_model(epoch)
+            break
+
+
