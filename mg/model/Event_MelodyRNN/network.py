@@ -33,19 +33,41 @@ class Event_Melody_RNN(nn.Module):
 
     def forward(self, event, hidden=None):
         # One step forward
+        # event  [1, batch*beam0]
+        # hidden [grus, batch*beam, hid]
+        assert len(event.shape) == 2
+        assert event.shape[0] == 1
+        batch_size = event.shape[1]
+        # print()
+        input = self.event_embedding(event) #[1, batch*beam0, dim]
+        # print(f'input.shape={input.shape}')
+        _, hidden = self.rnn(input, hidden)
+        output = hidden.permute(1, 0, 2).contiguous()
+        output = output.view(batch_size, -1).unsqueeze(0)
+        # print(f'output.shape={output.shape}')
+        output = self.output_fc(output)
+        return output, hidden
+
+    def gen_forward(self, event, hidden=None):
+        # One step forward
         assert len(event.shape) == 2
         assert event.shape[0] == 1
         batch_size = event.shape[1]
         input = self.event_embedding(event)
-        _, hidden = self.rnn(input, hidden)
-        output = hidden.permute(1, 0, 2).contiguous()
+        output, hidden = self.rnn(input, hidden)
+        output = output.permute(1, 0, 2).contiguous()
         output = output.view(batch_size, -1).unsqueeze(0)
         output = self.output_fc(output)
         return output, hidden
 
-    def SeqForward(self, event, hidden=None, lengths=None):
+    def SeqForward(self, events, hidden=None, lengths=None):
+        batch_size = events.shape[1]
+        event = self.get_primary_event(batch_size)
+        # print(f'event.shape={event.shape}')
+        one, hidden = self.gen_forward(event, hidden)
+        # print(f'one.shape={one.shape}')
         # One step forward
-        input = self.event_embedding(event)# (step, batch_size, dim)
+        input = self.event_embedding(events)# (step, batch_size, dim)
         if lengths is not None:
             input = nn.utils.rnn.pack_padded_sequence(input, lengths, batch_first=True)
         # packed_output, self.state = self.encoder(embedding_packed, state)  # output, (h, c)
@@ -54,12 +76,12 @@ class Event_Melody_RNN(nn.Module):
         if lengths is not None:
             output, _ = nn.utils.rnn.pad_packed_sequence(output, batch_first=True)
 
-        output = flatten_padded_sequences(output.permute(1,0,2), lengths)
-        # print(output.shape)
+        # output = flatten_padded_sequences(output.permute(1,0,2), lengths)
+        # print(f'output.shape={output.shape}')
         # output = hidden.permute(1, 0, 2).contiguous()#(seqlen, batch, dim)
         # output = output.view(batch_size, -1).unsqueeze(0)
         output = self.output_fc(output)#(tot_len, dim)
-        return output
+        return  torch.cat((one,output) , 0)
 
 
     def get_primary_event(self, batch_size):
@@ -84,12 +106,12 @@ class Event_Melody_RNN(nn.Module):
     # model.generate(init, window_size, events=events[:-1],
     #                              teacher_forcing_ratio=teacher_forcing_ratio, output_type='logit')
 
-    def train(self, init, events, lengths=None):
+    def Train(self, init, events, lengths=None):
         # init [batch_size, init_dim]
-        # events [batch_size, steps] indeces
+        # events [steps, batch_size] indeces
         hidden = self.init_to_hidden(init)
 
-        output = self.SeqForward(events.permute(1, 0), hidden, lengths) #forward one step
+        output = self.SeqForward(events, hidden, lengths) #forward one step
 
         return output
 
@@ -120,7 +142,7 @@ class Event_Melody_RNN(nn.Module):
             step_iter = Bar('Generating').iter(step_iter)
 
         for step in step_iter:
-            output, hidden = self.forward(event, hidden) #forward one step
+            output, hidden = self.gen_forward(event, hidden) #forward one step
 
             use_greedy = np.random.random() < greedy
             event = self._sample_event(output, greedy=use_greedy,
@@ -140,3 +162,108 @@ class Event_Melody_RNN(nn.Module):
                     event = events[step].unsqueeze(0)
 
         return torch.cat(outputs, 0)
+
+
+
+    def beam_search(self, init, steps, beam_size,
+                    temperature=1.0, stochastic=False, verbose=False):
+        assert len(init.shape) == 2 and init.shape[1] == self.init_dim
+        assert self.event_dim >= beam_size > 0 and steps > 0
+
+        batch_size = init.shape[0]
+        current_beam_size = beam_size
+
+        # Initial hidden weights
+        hidden = self.init_to_hidden(init)  # [gru_layers, batch_size, hidden_size]
+        hidden = hidden[:, :, None, :]  # [gru_layers, batch_size, 1, hidden_size]
+        hidden = hidden.repeat(1, 1, current_beam_size, 1)  # [gru_layers, batch_size, beam_size, hidden_dim]
+
+        # Initial event
+        event = self.get_primary_event(batch_size)  # [1, batch]
+        event = event[:, :, None].repeat(1, 1, current_beam_size)  # [1, batch, 1]
+
+        # [batch, beam, 1]   event sequences of beams
+        beam_events = event[0, :, None, :].repeat(1, current_beam_size, 1)
+
+        # [batch, beam] log probs sum of beams
+        beam_log_prob = torch.zeros(batch_size, current_beam_size).to(device)
+
+        if stochastic:
+            # [batch, beam] Gumbel perturbed log probs of beams
+            beam_log_prob_perturbed = torch.zeros(batch_size, current_beam_size).to(device)
+            beam_z = torch.full((batch_size, beam_size), float('inf'))
+            gumbel_dist = Gumbel(0, 1)
+
+        step_iter = range(steps)
+        if verbose:
+            step_iter = Bar(['', 'Stochastic '][stochastic] + 'Beam Search').iter(step_iter)
+
+        for step in step_iter:
+
+
+            event = event.view(1, batch_size * current_beam_size)  # [1, batch*beam0]
+            hidden = hidden.view(self.rnn_layers, batch_size * current_beam_size,
+                                 self.hidden_dim)  # [grus, batch*beam, hid]
+
+            logits, hidden = self.gen_forward(event, hidden)
+            hidden = hidden.view(self.rnn_layers, batch_size, current_beam_size,
+                                 self.hidden_dim)  # [grus, batch, cbeam, hid]
+            logits = (logits / temperature).view(1, batch_size, current_beam_size,
+                                                 self.event_dim)  # [1, batch, cbeam, out]
+
+            beam_log_prob_expand = logits + beam_log_prob[None, :, :, None]  # [1, batch, cbeam, out]
+            beam_log_prob_expand_batch = beam_log_prob_expand.view(1, batch_size, -1)  # [1, batch, cbeam*out]
+
+            if stochastic:
+                beam_log_prob_expand_perturbed = beam_log_prob_expand + gumbel_dist.sample(beam_log_prob_expand.shape)
+                beam_log_prob_Z, _ = beam_log_prob_expand_perturbed.max(-1)  # [1, batch, cbeam]
+                # print(beam_log_prob_Z)
+                beam_log_prob_expand_perturbed_normalized = beam_log_prob_expand_perturbed
+                # beam_log_prob_expand_perturbed_normalized = -torch.log(
+                #     torch.exp(-beam_log_prob_perturbed[None, :, :, None])
+                #     - torch.exp(-beam_log_prob_Z[:, :, :, None])
+                #     + torch.exp(-beam_log_prob_expand_perturbed)) # [1, batch, cbeam, out]
+                # beam_log_prob_expand_perturbed_normalized = beam_log_prob_perturbed[None, :, :, None] + beam_log_prob_expand_perturbed # [1, batch, cbeam, out]
+
+                beam_log_prob_expand_perturbed_normalized_batch = \
+                    beam_log_prob_expand_perturbed_normalized.view(1, batch_size, -1)  # [1, batch, cbeam*out]
+                _, top_indices = beam_log_prob_expand_perturbed_normalized_batch.topk(beam_size,
+                                                                                      -1)  # [1, batch, cbeam]
+
+                beam_log_prob_perturbed = \
+                    torch.gather(beam_log_prob_expand_perturbed_normalized_batch, -1, top_indices)[0]  # [batch, beam]
+
+            else:
+                _, top_indices = beam_log_prob_expand_batch.topk(beam_size, -1)
+
+            top_indices.to(device)
+
+            beam_log_prob = torch.gather(beam_log_prob_expand_batch, -1, top_indices)[0]  # [batch, beam]
+
+            beam_index_old = torch.arange(current_beam_size, device=device)[None, None, :, None]  # [1, 1, cbeam, 1]
+            beam_index_old = beam_index_old.repeat(1, batch_size, 1, self.output_dim)  # [1, batch, cbeam, out]
+            beam_index_old = beam_index_old.view(1, batch_size, -1)  # [1, batch, cbeam*out]
+            # beam_index_old.to(device)
+            # print(device)
+            # print(beam_index_old.device)
+            # print(top_indices.device)
+            beam_index_new = torch.gather(beam_index_old, -1, top_indices)
+
+            hidden = torch.gather(hidden, 2, beam_index_new[:, :, :, None].repeat(4, 1, 1, 1024))
+
+            event_index = torch.arange(self.output_dim, device=device)[None, None, None, :]  # [1, 1, 1, out]
+            event_index = event_index.repeat(1, batch_size, current_beam_size, 1)  # [1, batch, cbeam, out]
+            event_index = event_index.view(1, batch_size, -1)  # [1, batch, cbeam*out]
+            event_index.to(device)
+            event = torch.gather(event_index, -1, top_indices)  # [1, batch, cbeam*out]
+
+            beam_events = torch.gather(beam_events[None], 2,
+                                       beam_index_new.unsqueeze(-1).repeat(1, 1, 1, beam_events.shape[-1]))
+            beam_events = torch.cat([beam_events, event.unsqueeze(-1)], -1)[0]
+
+            current_beam_size = beam_size
+
+        best = beam_events[torch.arange(batch_size).long(), beam_log_prob.argmax(-1)]
+        best = best.contiguous().t()
+        return best
+

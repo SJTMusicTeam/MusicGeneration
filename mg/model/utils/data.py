@@ -100,14 +100,16 @@ class Event_Dataset:
 
     def SegBatchify(self,data):
         eventseq_batch = []
-        labels = []
+        #labels = []
         for i, (start, end) in data:
             eventseq = self.samples[i]
             eventseq = eventseq[start:end]
-            eventseq_batch.append(eventseq[:-1])
-            labels.append(eventseq[1:])
+            eventseq_batch.append(eventseq)
+            #labels.append(eventseq[1:])
             # print(eventseq_batch[-1][:10],labels[-1][:10])
-        return np.stack(eventseq_batch, axis=0), np.stack(labels,axis=0)
+
+        return np.stack(eventseq_batch, axis=1)#, np.stack(labels,axis=0)
+        # return np.stack(eventseq_batch, axis=0), np.stack(labels,axis=0)
 
     def Batchify(self,data):
         eventseq_batch = []

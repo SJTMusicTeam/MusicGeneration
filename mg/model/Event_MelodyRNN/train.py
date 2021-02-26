@@ -155,7 +155,7 @@ print('-' * 70)
 def load_model():
     global model_config, device, learning_rate
     model = Event_Melody_RNN(**model_config)
-    # model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/segment_epoch_27.pth'))
+    # model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/segment_512_3_1_epoch_239.pth'))
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return model, optimizer
@@ -187,8 +187,8 @@ print('-' * 70)
 
 def save_model(epoch):
     global model, optimizer, model_config, save_path
-    print('Saving to', save_path+config.train_mode+'_epoch_'+str(epoch)+'.pth')
-    torch.save(model.state_dict(),  save_path+config.train_mode+'_epoch_'+str(epoch)+'.pth')
+    print('Saving to', save_path+config.train_mode+'_512_3_epoch_'+str(epoch)+'.pth')
+    torch.save(model.state_dict(),  save_path+config.train_mode+'_512_3_1_epoch_'+str(epoch)+'.pth')
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -284,7 +284,7 @@ elif config.train_mode=='sequence':
                 # print(events.shape)
                 # print(events)
                 # print(label.shape)
-                outputs = model.train(init, events=events, lengths=lengths)
+                outputs = model.Train(init, events=events, lengths=lengths)
                 init.detach_()
                 # print(outputs.shape)
                 loss = loss_function(outputs.view(-1, event_dim), label)
@@ -310,13 +310,13 @@ elif config.train_mode=='sequence':
             break
 elif config.train_mode=='segment':
     window_size = np.min(dataset.seqlens)
-    stride_size = window_size//5
+    stride_size = window_size//3
     data = dataset.batches(batch_size, window_size, stride_size)
     print(f'Window Size = {window_size}')
     print(f'Stride = {stride_size}')
     print(f'Iteration={len(data)//batch_size}')
     mydataset = MyDataset(data)
-    num_workers = 0 if sys.platform.startswith('win32') else 8
+    num_workers = 0 if sys.platform.startswith('win32') else 10
     batch_gen = Data.DataLoader(mydataset,
                                 batch_size,
                                 collate_fn=dataset.SegBatchify,
@@ -327,31 +327,30 @@ elif config.train_mode=='segment':
     for epoch in range(epochs):
         try:
             l_sum, n = 0, 0
-            for iteration, (events, label) in enumerate(batch_gen):
+            for iteration, events in enumerate(batch_gen):
                 # print(events.shape)
                 events.dtype = np.int16
-                label.dtype = np.int16
                 events = torch.LongTensor(events).to(device)
-                label = torch.LongTensor(label).to(device)
                 init = torch.randn(batch_size, model.init_dim).to(device)
                 # print(events.shape)
                 # print(label.shape)
-                outputs = model.train(init, events=events)
-                # init.detach_()
+                outputs = model.Train(init, events=events[:-1])
+                init.detach_()
                 # print(outputs.shape)
-                loss = loss_function(outputs.view(-1, event_dim), label.view(-1))
+                loss = loss_function(outputs.view(-1, event_dim), events.view(-1))
                 model.zero_grad()
 
                 loss.backward()
 
                 l_sum += loss.item()
                 n += 1
-                norm = utils.compute_gradient_norm(model.parameters())
-                nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=2)
+                # norm = utils.compute_gradient_norm(model.parameters())
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                # nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=1)
 
                 optimizer.step()
 
-                if (iteration+1)% 30 == 0:
+                if (iteration+1)% 50 == 0:
                     print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
 
             print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
