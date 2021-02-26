@@ -25,6 +25,7 @@ DEFAULT_NORMALIZATION_BASELINE = 60  # C4
 USE_VELOCITY = True
 BEAT_LENGTH = 60 / DEFAULT_TEMPO
 DEFAULT_TIME_SHIFT_BINS = 0.01 * np.arange(1,101)#1.15 ** np.arange(32) / 65
+# DEFAULT_TIME_SHIFT_BINS =  np.arange(1,33) / 32
 DEFAULT_VELOCITY_STEPS = 32
 DEFAULT_NOTE_LENGTH = BEAT_LENGTH * 2
 MIN_NOTE_LENGTH = BEAT_LENGTH / 2
@@ -266,6 +267,7 @@ class EventSeq:
             elif event.type == 'velocity':
                 index = min(event.value, velocity_bins.size - 1)
                 velocity = velocity_bins[index]
+                # velocity = velocity_bins[24] #100
 
             elif event.type == 'time_shift':
                 time += EventSeq.time_shift_bins[event.value]

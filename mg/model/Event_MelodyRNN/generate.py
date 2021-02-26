@@ -39,7 +39,7 @@ def getopt():
     parser.add_option('-s', '--save_path',
                       dest='save_path',
                       type='string',
-                      default='/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_271.pth',
+                      default='/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/segment_512_3_1_epoch_366.pth',
                       #default='/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_128.pth',
                       help = 'pth file containing the trained model')
 
@@ -51,7 +51,7 @@ def getopt():
     parser.add_option('-l', '--max-length',
                       dest='max_len',
                       type='int',
-                      default=10000)
+                      default=1200)
 
     parser.add_option('-g', '--greedy-ratio',
                       dest='greedy_ratio',
@@ -61,7 +61,7 @@ def getopt():
     parser.add_option('-B', '--beam-size',
                       dest='beam_size',
                       type='int',
-                      default=0)
+                      default=3)
 
     parser.add_option('-S', '--stochastic-beam-search',
                       dest='stochastic_beam_search',
@@ -96,6 +96,7 @@ beam_size = opt.beam_size
 temperature = opt.temperature
 init_zero = opt.init_zero
 
+use_beam_search = True
 if use_beam_search:
     greedy_ratio = 'DISABLED'
 else:

@@ -55,6 +55,8 @@ def preprocess_midi_files_under(midi_root, save_dir, num_workers, type='event'):
 
 
 if __name__ == '__main__':
+    # pp = '../../../egs/dataset/maestro/train/MIDI-UNPROCESSED_01-03_R1_2014_MID--AUDIO_01_R1_2014_wav--3.midi'
+    # preprocess_midi_event(pp)
     preprocess_midi_files_under(
         midi_root=sys.argv[1],
         save_dir=sys.argv[2],
