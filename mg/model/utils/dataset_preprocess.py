@@ -1,7 +1,7 @@
 import os
 import sys
 sys.path.append('/data2/qt/MusicGeneration/mg/model/')
-from utils.preprocess import *
+from utils.preprocess_MIDI_like import *
 
 data_root_url = "../../../egs/dataset/maestro"
 data_train_url = "../../../egs/dataset/maestro/train"

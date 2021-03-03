@@ -407,6 +407,8 @@ class ControlSeq:
             ], 1)  # [steps, hist_dim + 1]
 
 
+
+
 if __name__ == '__main__':
     print(DEFAULT_TIME_SHIFT_BINS)
 
