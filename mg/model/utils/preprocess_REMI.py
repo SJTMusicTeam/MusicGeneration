@@ -4,6 +4,7 @@ import torch
 import hashlib
 from progress.bar import Bar
 from concurrent.futures import ProcessPoolExecutor
+sys.path.append('/data2/qt/MusicGeneration/mg/model/')
 from utils.REMI import REMI_EventSeq
 import utils.shared
 

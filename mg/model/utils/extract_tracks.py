@@ -1,13 +1,18 @@
 import os
 import os.path
-import random
+import torch
 from pathlib import Path
 import numpy as np
 import pypianoroll
 import pretty_midi
-from pypianoroll import Multitrack, Track
-from tqdm import tqdm
 from collections import defaultdict
+import json
+import sys
+sys.path.append('/data2/qt/MusicGeneration/mg/model/')
+import hashlib
+from progress.bar import Bar
+from concurrent.futures import ProcessPoolExecutor
+from utils.shared import find_files_by_extensions
 
 tracks_name = ['melody', 'piano', 'bass', 'guitar', 'drum', 'string']
 instrument_numbers = {}
@@ -54,11 +59,16 @@ def remove_drum_empty_track(midi_file, drop_drum=True):
 
     return midi_data, pypiano_data
 
-def check_melody(name):
+def check_name(name, name2,target):
     names = [item.lower() for item in name.split()]
-    if 'melody' in names:
+    if target in names:
         return True
-    if 'flute' in names:
+    if target == 'melody' and 'flute' in names:
+        return True
+    names = [item.lower() for item in name2.split()]
+    if target in names:
+        return True
+    if target == 'melody' and 'flute' in names:
         return True
     return False
 
@@ -90,17 +100,19 @@ def get_merged(collection):
     # return merge_piano_roll_list.reshape(-1,32,128,4)
     return merge_piano_roll_list
 
-# def merged_tracks(collection):
-#     multitrack[category_list[key]].get_merged_pianoroll()
-
-#def pianoroll_to_tracks(merged_pianoroll):
-
+def count_tracks(collection,program_id):
+    cnt = 0
+    for key in tracks_name:
+        if len(program_id[key])!=0:
+            cnt += 1
+        # print(f'key = {key}, tracks = {collection[key]}')
+    return cnt
 
 def extract_merge(midi_path, instrument_numbers):
     pretty_midi_data, pypiano_data = remove_drum_empty_track(midi_path, drop_drum=False)
     # pretty_midi_data = pretty_midi.PrettyMIDI(midi_path)
     music_tracks = pypianoroll.from_pretty_midi(pretty_midi_data)
-    print(music_tracks)
+    # print(music_tracks)
     collection = defaultdict(list)
     program_id = defaultdict(list)
     program = {}  # json.load()
@@ -112,33 +124,34 @@ def extract_merge(midi_path, instrument_numbers):
         # print(track)
         # print(pretty_midi_data.instruments[idx].name)
 
-        if track.program == program['melody'] or check_melody(track.name) \
-                or check_melody(pretty_midi_data.instruments[idx].name):
+        if track.program == program['melody'] or \
+                check_name(track.name, pretty_midi_data.instruments[idx].name, 'melody'):
             collection['melody'].append(track)
             program_id['melody'].append(idx)
-        elif track.program in instrument_numbers['piano']:
-            collection['piano'].append(track)
-            program_id['piano'].append(idx)
-        elif track.program in instrument_numbers['bass'] or track.program == program['bass']:
-            collection['bass'].append(track)
-            program_id['bass'].append(idx)
-        elif track.program in instrument_numbers['guitar']:
-            collection['guitar'].append(track)
-            program_id['guitar'].append(idx)
-        elif track.program in instrument_numbers['drum'] or track.program == program['drum']:
+        elif track.program in instrument_numbers['drum'] or track.program == program['drum'] or \
+                check_name(track.name, pretty_midi_data.instruments[idx].name, 'drum') :
             collection['drum'].append(track)
             program_id['drum'].append(idx)
+        elif track.program in instrument_numbers['piano'] or \
+                check_name(track.name, pretty_midi_data.instruments[idx].name, 'piano'):
+            collection['piano'].append(track)
+            program_id['piano'].append(idx)
+        elif track.program in instrument_numbers['bass'] or track.program == program['bass'] or \
+                check_name(track.name, pretty_midi_data.instruments[idx].name, 'bass'):
+            collection['bass'].append(track)
+            program_id['bass'].append(idx)
+        elif track.program in instrument_numbers['guitar'] or \
+                check_name(track.name, pretty_midi_data.instruments[idx].name, 'guitar'):
+            collection['guitar'].append(track)
+            program_id['guitar'].append(idx)
         else:
             collection['string'].append(track)
             program_id['string'].append(idx)
         # print(collection)
 
-    # print(collection['melody'])
-    # print(collection['piano'])
-    # print(collection['bass'])
-    # print(collection['drum'])
-    # print(collection['guitar'])
-    # print(collection['string'])
+    cnt = count_tracks(collection, program_id)
+    if cnt < 3 or (cnt == 2 and len(program_id['melody'])==0 ):
+        return None
     # for key in tracks_name:
     #     collection[key] = music_tracks[collection[key]].get_merged_pianoroll()
     merged_pianoroll = get_merged(collection)
@@ -150,16 +163,90 @@ def extract_merge(midi_path, instrument_numbers):
             IS_DRUM = False
             if key == 'drum':
                 IS_DRUM = True
-            track = pypianoroll.StandardTrack(name=key, program=program_id[key][0], \
+            if key == 'melody' or key == 'string':
+                Pro = program_id[key][0]
+            else:
+                Pro = instrument_numbers[key][0]
+            track = pypianoroll.StandardTrack(name=key, program=Pro, \
                               is_drum=IS_DRUM, pianoroll=merged_pianoroll[key])
             pypiano_mult.append(track)
 
     return pypiano_mult
 
-if __name__ == '__main__':
-    pp = '../../../egs/dataset/multi_tracks/3a3a1f1c159b128c0715c6dbb56dd612.mid'
-    Mult = extract_merge(pp, instrument_numbers)
-    print(Mult)
-    pf = '../../../egs/dataset/multi_tracks/six_tracks_test.mid'
+
+# multi-threading
+def preprocess_merge_midi(path, output_dir):
+    Mult = extract_merge(path, instrument_numbers)
+    if Mult is None:
+        return
     music = Mult.to_pretty_midi()
-    music.write(pf)
+    # print(path.split('/'))
+    name = path.split('/')[-1]
+    # print(name)
+    # output_name = os.path.join(output_dir, name)
+    code = hashlib.md5(path.encode()).hexdigest()
+    save_path = os.path.join(output_dir, '{}_{}'.format(code,name))
+    # print(os.path.join(output_dir, output_name))
+    music.write(save_path)
+    print(f'success for file:{save_path}')
+    return
+
+def preprocess_merge_midi_files_under(input_dir, output_dir, num_workers, dict_path):
+    global program_dict
+    program_dict = get_program_dict(dict_path=dict_path)
+    if input_dir[-1] != '/':
+        input_dir += '/'
+    if output_dir[-1] != '/':
+        output_dir += '/'
+
+    midi_paths = list(find_files_by_extensions(input_dir, ['.mid', '.midi']))
+    os.makedirs(output_dir, exist_ok=True)
+
+    executor = ProcessPoolExecutor(num_workers)
+
+    for path in midi_paths:
+        try:
+            # name_with_sub_folder = path.replace(midi_root, "")
+            # output_name = os.path.join(save_dir, name_with_sub_folder)
+            executor.submit(preprocess_merge_midi, path, output_dir)
+        except KeyboardInterrupt:
+            print(' Abort')
+            return
+        except:
+            print(' Error')
+            continue
+
+    # for path, future in Bar('Processing').iter(results):
+    #     print(' ', end='[{}]'.format(path), flush=True)
+    #     name = os.path.basename(path)
+    #     code = hashlib.md5(path.encode()).hexdigest()
+    #     save_path = os.path.join(output_dir, out_fmt.format(name, code))
+    #     torch.save(future.result(), save_path)
+
+    print('Done')
+
+def get_program_dict(dict_path):
+    with open(dict_path, 'r') as f:
+        program_dict = json.load(f)
+    return program_dict
+
+# dict_path = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_output/program_result.json'
+# dict_path = '/data2/qt/midi-miner/example/output/program_result.json'
+# program_dict = get_program_dict(dict_path=dict_path)
+
+
+if __name__ == '__main__':
+    # print(program_dict)
+    # pp = '../../../egs/dataset/multi_tracks/3a3a1f1c159b128c0715c6dbb56dd612.mid'
+    # Mult = extract_merge(pp, instrument_numbers)
+    # # print(Mult)
+    # pf = '../../../egs/dataset/multi_tracks/six_tracks_test.mid'
+    # music = Mult.to_pretty_midi()
+    # music.write(pf)
+
+    preprocess_merge_midi_files_under(
+        input_dir=sys.argv[1],
+        output_dir=sys.argv[2],
+        num_workers=int(sys.argv[3]),
+        dict_path=sys.argv[4])
+# python extract_tracks.py /data2/qt/MusicGeneration/egs/dataset/lmd_matched /data2/qt/MusicGeneration/egs/dataset/lmd_matched_merged 10 /data2/qt/MusicGeneration/egs/dataset/lmd_matched_output/program_result.json

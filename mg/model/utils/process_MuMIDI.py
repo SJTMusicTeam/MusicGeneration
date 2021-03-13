@@ -5,15 +5,14 @@ import hashlib
 from progress.bar import Bar
 from concurrent.futures import ProcessPoolExecutor
 sys.path.append('/data2/qt/MusicGeneration/mg/model/')
-from utils.sequence import NoteSeq, EventSeq
+from utils.REMI import REMI_EventSeq
 import utils.shared
 
 
-def preprocess_midi_event(path):
-    note_seq = NoteSeq.from_midi_file(path)
-    note_seq.adjust_time(-note_seq.notes[0].start)
-    event_seq = EventSeq.from_note_seq(note_seq)
-    return event_seq.to_array()
+def preprocess_MuMIDI_event(path):
+    remi_event_seq = REMI_EventSeq.extract_events(path)
+    #print(remi_event_seq[:15])
+    return REMI_EventSeq.to_array(remi_event_seq)
 
 def preprocess_midi_files_under(midi_root, save_dir, num_workers):
     midi_paths = list(utils.shared.find_files_by_extensions(midi_root, ['.mid', '.midi']))
@@ -25,7 +24,7 @@ def preprocess_midi_files_under(midi_root, save_dir, num_workers):
 
     for path in midi_paths:
         try:
-            results.append((path, executor.submit(preprocess_midi_event, path)))
+            results.append((path, executor.submit(preprocess_MuMIDI_event, path)))
         except KeyboardInterrupt:
             print(' Abort')
             return
@@ -44,10 +43,20 @@ def preprocess_midi_files_under(midi_root, save_dir, num_workers):
 
 
 if __name__ == '__main__':
-    # pp = '../../../egs/dataset/maestro/train/MIDI-UNPROCESSED_01-03_R1_2014_MID--AUDIO_01_R1_2014_wav--3.midi'
-    # preprocess_midi_event(pp)
-    preprocess_midi_files_under(
-        midi_root=sys.argv[1],
-        save_dir=sys.argv[2],
-        num_workers=int(sys.argv[3],
-        type='event'))
+    pp = '../../../egs/dataset/tmp_res/test_seq_bef.midi'
+    pb = '../../../egs/dataset/tmp_res/test_remi_bef.midi'
+    pa = '../../../egs/dataset/tmp_res/test_remi_aft.midi'
+    #events = preprocess_REMI_event(pp)
+    events = REMI_EventSeq.extract_events(pp)
+    words  = REMI_EventSeq.to_array(events)
+    event = REMI_EventSeq.to_event(words)
+    print(events[:10])
+    print(event[:10])
+    REMI_EventSeq.write_midi(events,pa)
+    REMI_EventSeq.write_midi(event, pb)
+
+    # preprocess_midi_files_under(
+    #     midi_root=sys.argv[1],
+    #     save_dir=sys.argv[2],
+    #     num_workers=int(sys.argv[3],
+    #     ))
