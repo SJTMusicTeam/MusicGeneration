@@ -17,12 +17,14 @@ DEFAULT_DURATION_BINS = np.arange(DEFAULT_DURATION_RANGE.start, DEFAULT_DURATION
 DEFAULT_tempo_INTERVALS = [range(30, 90), range(90, 150), range(150, 210)]
 
 DEFAULT_VELOCITY = 100
-DEFAULT_PITCH_RANGE = range(0, 127)
+DEFAULT_PITCH_RANGE = range(1, 129)
 
 DEFAULT_VELOCITY_STEPS = 4 #32
-DEFAULT_VELOCITY_RANGE = range(0, 129)
+DEFAULT_VELOCITY_RANGE = range(DEFAULT_VELOCITY_STEPS, 129)
 DEFAULT_VELOCITY_BINS = np.arange(DEFAULT_VELOCITY_RANGE.start, DEFAULT_VELOCITY_RANGE.stop,
                                   DEFAULT_VELOCITY_STEPS)
+
+DEFAULT_DRUM_TYPE = range(1,129)#range(35, 82)
 
 # parameters for output
 DEFAULT_RESOLUTION = 480
@@ -81,13 +83,17 @@ class Item(object):
 
 
 # read notes and tempo changes from midi (multi-tracks)
-def read_items(file_path):
+def read_items(file_path, con_instr = DEFAULT_TRACKS):
     midi_obj = miditoolkit.midi.parser.MidiFile(file_path)
+    # midi_obj.dump('/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi.midi')
+    # print(midi_obj)
     # print(midi_obj.instruments)
 
     # note
     note_items = []
     for instr in range(len(midi_obj.instruments)):
+        if midi_obj.instruments[instr].name not in con_instr:
+            continue
         notes = midi_obj.instruments[instr].notes
         notes.sort(key=lambda x: (x.start, x.pitch))
         for note in notes:
@@ -257,18 +263,26 @@ def item2event(groups):
                 velocity_index = np.searchsorted(
                     DEFAULT_VELOCITY_BINS,
                     item.velocity,
-                    side='right') - 1
+                    side='right')
+                # print(f'velocity={item.velocity}, velocity_index={velocity_index}')
                 events.append(Event(
                     name='note_velocity',
                     time=item.start,
                     value=velocity_index,
                     text='{}/{}'.format(item.velocity, DEFAULT_VELOCITY_BINS[velocity_index])))
                 # pitch
-                events.append(Event(
-                    name='note_on',
-                    time=item.start,
-                    value=item.pitch,
-                    text='{}'.format(item.pitch)))
+                if track!='drum':
+                    events.append(Event(
+                        name='note_on',
+                        time=item.start,
+                        value=item.pitch - DEFAULT_PITCH_RANGE.start,
+                        text='{}'.format(item.pitch)))
+                else:
+                    events.append(Event(
+                        name='drum_type',
+                        time=item.start,
+                        value=item.pitch - DEFAULT_DRUM_TYPE.start,
+                        text='{}'.format(item.pitch)))
                 # duration
                 duration = item.end - item.start
                 index = np.argmin(abs(DEFAULT_DURATION_BINS - duration))
@@ -310,150 +324,8 @@ def item2event(groups):
 
 
 #############################################################################################
-# WRITE MIDI
+# MuMIDI class
 #############################################################################################
-def word_to_event(words, word2event):
-    events = []
-    for word in words:
-        event_name, event_value = word2event.get(word).split('_')
-        events.append(Event(event_name, None, event_value, None))
-    return events
-
-
-def write_midi(events, output_path, prompt_path=None):
-    # get downbeat and note (no time)
-    temp_notes = []
-    temp_chords = []
-    temp_tempos = []
-    for i in range(len(events) - 3):
-        if events[i].name == 'bar' and i > 0:
-            temp_notes.append('bar')
-            temp_chords.append('bar')
-            temp_tempos.append('bar')
-        elif events[i].name == 'position' and \
-                events[i + 1].name == 'note_velocity' and \
-                events[i + 2].name == 'note_on' and \
-                events[i + 3].name == 'note_duration':
-            # start time and end time from position
-            position = int(events[i].value)
-            # velocity
-            index = int(events[i + 1].value)
-            velocity = int(DEFAULT_VELOCITY_BINS[index])
-            # pitch
-            pitch = int(events[i + 2].value)
-            # duration
-            index = int(events[i + 3].value)
-            duration = DEFAULT_DURATION_BINS[index]
-            # adding
-            temp_notes.append([position, velocity, pitch, duration])
-        elif events[i].name == 'position' and events[i + 1].name == 'chord':
-            position = int(events[i].value)
-            temp_chords.append([position, events[i + 1].value])
-        elif events[i].name == 'position' and \
-                events[i + 1].name == 'tempo_class' and \
-                events[i + 2].name == 'tempo_value':
-            position = int(events[i].value)
-            if events[i + 1].value == 'slow':
-                tempo = DEFAULT_tempo_INTERVALS[0].start + int(events[i + 2].value)
-            elif events[i + 1].value == 'mid':
-                tempo = DEFAULT_tempo_INTERVALS[1].start + int(events[i + 2].value)
-            elif events[i + 1].value == 'fast':
-                tempo = DEFAULT_tempo_INTERVALS[2].start + int(events[i + 2].value)
-            temp_tempos.append([position, tempo])
-    # get specific time for notes
-    ticks_per_beat = DEFAULT_RESOLUTION
-    ticks_per_bar = DEFAULT_RESOLUTION * 4  # assume 4/4
-    notes = []
-    current_bar = 0
-    for note in temp_notes:
-        if note == 'bar':
-            current_bar += 1
-        else:
-            position, velocity, pitch, duration = note
-            # position (start time)
-            current_bar_st = current_bar * ticks_per_bar
-            current_bar_et = (current_bar + 1) * ticks_per_bar
-            flags = np.linspace(current_bar_st, current_bar_et, DEFAULT_FRACTION, endpoint=False, dtype=int)
-            st = flags[position]
-            # duration (end time)
-            et = st + duration
-            notes.append(miditoolkit.midi.containers.Note(start=st, end=et, pitch=pitch,
-                                                          velocity=velocity))  # velocity, pitch, st, et))
-    # get specific time for chords
-    if len(temp_chords) > 0:
-        chords = []
-        current_bar = 0
-        for chord in temp_chords:
-            if chord == 'bar':
-                current_bar += 1
-            else:
-                position, value = chord
-                # position (start time)
-                current_bar_st = current_bar * ticks_per_bar
-                current_bar_et = (current_bar + 1) * ticks_per_bar
-                flags = np.linspace(current_bar_st, current_bar_et, DEFAULT_FRACTION, endpoint=False, dtype=int)
-                st = flags[position]
-                chords.append([st, value])
-    # get specific time for tempos
-    tempos = []
-    current_bar = 0
-    for tempo in temp_tempos:
-        if tempo == 'bar':
-            current_bar += 1
-        else:
-            position, value = tempo
-            # position (start time)
-            current_bar_st = current_bar * ticks_per_bar
-            current_bar_et = (current_bar + 1) * ticks_per_bar
-            flags = np.linspace(current_bar_st, current_bar_et, DEFAULT_FRACTION, endpoint=False, dtype=int)
-            st = flags[position]
-            tempos.append([int(st), value])
-    # write
-    if prompt_path:
-        midi = miditoolkit.midi.parser.MidiFile(prompt_path)
-        #
-        last_time = DEFAULT_RESOLUTION * 4 * 4
-        # note shift
-        for note in notes:
-            note.start += last_time
-            note.end += last_time
-        midi.instruments[0].notes.extend(notes)
-        # tempo changes
-        temp_tempos = []
-        for tempo in midi.tempo_changes:
-            if tempo.time < DEFAULT_RESOLUTION * 4 * 4:
-                temp_tempos.append(tempo)
-            else:
-                break
-        for st, bpm in tempos:
-            st += last_time
-            temp_tempos.append(miditoolkit.midi.containers.TempoChange(bpm, st))
-        midi.tempo_changes = temp_tempos
-        # write chord into marker
-        if len(temp_chords) > 0:
-            for c in chords:
-                midi.markers.append(
-                    miditoolkit.midi.containers.Marker(text=c[1], time=c[0] + last_time))
-    else:
-        midi = miditoolkit.midi.parser.MidiFile()
-        midi.ticks_per_beat = DEFAULT_RESOLUTION
-        # write instrument
-        inst = miditoolkit.midi.containers.Instrument(0, is_drum=False)
-        inst.notes = notes
-        midi.instruments.append(inst)
-        # write tempo
-        tempo_changes = []
-        for st, bpm in tempos:
-            tempo_changes.append(miditoolkit.midi.containers.TempoChange(bpm, st))
-        midi.tempo_changes = tempo_changes
-        # write chord into marker
-        if len(temp_chords) > 0:
-            for c in chords:
-                midi.markers.append(
-                    miditoolkit.midi.containers.Marker(text=c[1], time=c[0]))
-    # write
-    midi.dump(output_path)
-
 
 class MuMIDI_EventSeq:
     pitch_range = DEFAULT_PITCH_RANGE
@@ -474,6 +346,7 @@ class MuMIDI_EventSeq:
         * note_on(pitch) : 128 : 0-127
         * note_duration : 32: 0-31
         * note_velocity: 32: 0-31
+        * drum_type: 47:35-81
         * bar: 1: 0
         * position: 32: 1-32
         * track: 6: melody, piano, bass, guitar, string, drum
@@ -491,6 +364,7 @@ class MuMIDI_EventSeq:
         feat_dims['note_on'] = len(MuMIDI_EventSeq.pitch_range)
         feat_dims['note_duration'] = len(MuMIDI_EventSeq.duration_bins)
         feat_dims['note_velocity'] = len(DEFAULT_VELOCITY_BINS)
+        feat_dims['drum_type'] = len(DEFAULT_DRUM_TYPE)
         feat_dims['bar'] = 1
         feat_dims['position'] = DEFAULT_FRACTION
         feat_dims['track'] = len(DEFAULT_TRACKS)
@@ -524,30 +398,80 @@ class MuMIDI_EventSeq:
         return feat_ranges
 
     @staticmethod
-    def get_velocity_bins():
-        n = MuMIDI_EventSeq.velocity_range.stop - MuMIDI_EventSeq.velocity_range.start
-        return np.arange(MuMIDI_EventSeq.velocity_range.start,
-                         MuMIDI_EventSeq.velocity_range.stop,
-                         n / (MuMIDI_EventSeq.velocity_steps - 1))
-
-    @staticmethod
     def extract_events(input_path):  # detail
         note_items, tempo_items = read_items(input_path)
-        # note_item:   Item(name=Note, start=956, end=1530, velocity=55, pitch=59)
-        # tempo_items: Item(name=tempo, start=0, end=None, velocity=None, pitch=120)
         note_items = quantize_items(note_items)
-        # Item(name=Note, start=960, end=1534, velocity=55, pitch=59)
 
         max_time = note_items[-1].end
-
         chord_items = extract_chords(note_items)
-        # Item(name=Chord, start=0, end=960, velocity=None, pitch=N:N)
-        # Item(name=Chord, start=960, end=2880, velocity=None, pitch=G:maj)
 
         items = chord_items + tempo_items + note_items
         groups = group_items(items, max_time)
         events = item2event(groups)
         return events
+
+    @staticmethod
+    def extract_split_events(input_path):  # detail
+        note_items, tempo_items = read_items(input_path, con_instr=['melody'])
+        note_items = quantize_items(note_items)
+
+        max_time = note_items[-1].end
+        chord_items = extract_chords(note_items)
+
+        items = chord_items + tempo_items + note_items
+        groups = group_items(items, max_time)
+        melody_events = item2event(groups)
+
+        note_items, tempo_items = read_items(input_path, con_instr=['piano', 'bass', 'guitar', 'string', 'drum'])
+        note_items = quantize_items(note_items)
+
+        max_time = note_items[-1].end
+        chord_items = extract_chords(note_items)
+
+        items = chord_items + tempo_items + note_items
+        groups = group_items(items, max_time)
+        arrange_events = item2event(groups)
+
+        return melody_events, arrange_events
+
+    @staticmethod
+    def filter_melody(arr):
+        idxs_feats = MuMIDI_EventSeq.dims_feat()
+        print([ idxs_feats[item][0] == 'melody' for item in arr])
+        counts = np.sum([ idxs_feats[item][0] == 'melody' for item in arr])
+        if counts>10:
+            return True
+        return False
+
+    @staticmethod
+    def filter_event(events, keys):
+        def check(name,keys):
+            for key in keys:
+                if key in name:
+                    return True
+            return False
+
+        res = []
+        for event in events:
+            if not check(event.name, keys):
+                res.append(event)
+
+        return res
+
+    @staticmethod
+    def get_event(events, keys):
+        def check(name,keys):
+            for key in keys:
+                if key in name:
+                    return True
+            return False
+
+        res = []
+        for event in events:
+            if check(event.name, keys):
+                res.append(event)
+
+        return res
 
     @staticmethod
     def to_array(events):
@@ -599,35 +523,30 @@ class MuMIDI_EventSeq:
             else:
                 if events[i].name == 'position':
                     position = int(events[i].value)
-                if events[i].name.startswith('track'):
+                elif events[i].name.startswith('track'):
                     track = events[i].name.split('_')[-1]
-                if  events[i].name == 'note_velocity' and \
-                    events[i + 1].name == 'note_on' and \
+                elif events[i].name == 'note_velocity' and \
+                    (events[i + 1].name == 'note_on' or events[i + 1].name =='drum_on' ) and \
                     events[i + 2].name == 'note_duration':
                     # start time and end time from position
                     # velocity
                     index = int(events[i].value)
                     velocity = int(DEFAULT_VELOCITY_BINS[index])
                     # pitch
-                    pitch = int(events[i + 1].value)
+                    if events[i + 1].name == 'note_on':
+                        pitch = int(events[i + 1].value) + DEFAULT_PITCH_RANGE.start
+                    else:
+                        pitch = int(events[i + 1].value) + DEFAULT_DRUM_TYPE.start
                     # duration
                     index = int(events[i + 2].value)
-                    duration = DEFAULT_DURATION_BINS[index]
+                    duration = int(DEFAULT_DURATION_BINS[index])
                     # adding
                     temp_notes.append([position, velocity, pitch, duration, track])
                 elif events[i].name == 'chord':
                     temp_chords.append([position, events[i].value])
-                elif    events[i].name == 'tempo_class' and \
+                elif events[i].name == 'tempo_class' and \
                         events[i + 1].name == 'tempo_value':
                     position = int(events[i].value)
-                    """
-                    if events[i + 1].value == 0:#'slow':
-                        tempo = DEFAULT_tempo_INTERVALS[0].start + int(events[i + 2].value)
-                    elif events[i + 1].value == 1:#'mid':
-                        tempo = DEFAULT_tempo_INTERVALS[1].start + int(events[i + 2].value)
-                    elif events[i + 1].value == 2:#'fast':
-                        tempo = DEFAULT_tempo_INTERVALS[2].start + int(events[i + 2].value)
-                    """
                     tempo = DEFAULT_tempo_INTERVALS[events[i].value].start + int(events[i + 1].value)
                     temp_tempos.append([position, tempo])
         # get specific time for notes
@@ -680,24 +599,27 @@ class MuMIDI_EventSeq:
                 st = flags[position]
                 tempos.append([int(st), value])
         # write
-        """
-        Doing        
-        """
         midi = miditoolkit.midi.parser.MidiFile()
         midi.ticks_per_beat = DEFAULT_RESOLUTION
         # write instrument
         # inst = {}
         for track in DEFAULT_TRACKS:
+            if(len(notes[track])==0):
+                continue
             IS_DRUM = False
             if track == 'drum':
                 IS_DRUM = True
-
             # print(f'track = {track}, pro_id={instrument_numbers[track]}')
             Pro_id = instrument_numbers[track][0]
             inst = miditoolkit.midi.containers.Instrument(program=Pro_id, is_drum=IS_DRUM,name=track)
             inst.notes = notes[track]
             midi.instruments.append(inst)
-        print(midi.instruments)
+        # print(midi.instruments)
+        # for inst in midi.instruments:
+        #     print(inst)
+        #     print(inst.notes)
+        #     print('*'*10)
+        # print('-'*20)
         # write tempo
         tempo_changes = []
         for st, bpm in tempos:
@@ -709,7 +631,8 @@ class MuMIDI_EventSeq:
                 midi.markers.append(
                     miditoolkit.midi.containers.Marker(text=c[1], time=c[0]))
         # write
-        print(output_path)
+        # print(output_path)
+        # print(midi)
         midi.dump(output_path)
         return midi
 
@@ -718,42 +641,23 @@ if __name__ == '__main__':
     #print(DEFAULT_DURATION_BINS)
     #print(len(DEFAULT_DURATION_BINS))
     # pp = '../../../egs/dataset/lmd_matched_merged/six_tracks_test.mid'
+    # print(DEFAULT_VELOCITY_BINS)
     pp = '/data2/qt/MusicGeneration/egs/dataset/multi_tracks/six_tracks_test.mid'
     pa = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_bef.midi'
     pb = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_aft.midi'
     #events = preprocess_REMI_event(pp)
     events = MuMIDI_EventSeq.extract_events(pp)
-    words  = MuMIDI_EventSeq.to_array(events)
-    event = MuMIDI_EventSeq.to_event(words)
-    print(*events[:10],sep='\n')
-    print('*'*10)
-    print(*event[:10],sep='\n')
     MuMIDI_EventSeq.write_midi(events, pa)
+    # print('*'*10)
+    words = MuMIDI_EventSeq.to_array(events)
+    event = MuMIDI_EventSeq.to_event(words)
     MuMIDI_EventSeq.write_midi(event, pb)
+    #
+    # print(*events[:10],sep='\n')
+    # print('*'*10)
+    # print(*event[:10],sep='\n')
 
-    # preprocess_midi_files_under(
-    #     midi_root=sys.argv[1],
-    #     save_dir=sys.argv[2],
-    #     num_workers=int(sys.argv[3],
-    #     ))
-    # note_items, tempo_items = read_items(pp)
-    # # note_item:   Item(name=Note, start=956, end=1530, velocity=55, pitch=59)
-    # # tempo_items: Item(name=tempo, start=0, end=None, velocity=None, pitch=120)
-    # note_items = quantize_items(note_items)
-    # # Item(name=Note, start=960, end=1534, velocity=55, pitch=59)
-    #
-    # max_time = note_items[-1].end
-    #
-    # chord_items = extract_chords(note_items)
-    # # print(chord_items)
-    # # Item(name=Chord, start=0, end=960, velocity=None, pitch=N:N)
-    # # Item(name=Chord, start=960, end=2880, velocity=None, pitch=G:maj)
-    #
-    # items = chord_items + tempo_items + note_items
-    # groups = group_items(items, max_time)
-    # # for group in groups:
-    # #     print(group)
-    # events = item2event(groups)
-    # print(*events[:100], sep='\n')
+
+
 
 
