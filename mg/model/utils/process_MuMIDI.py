@@ -7,18 +7,29 @@ from concurrent.futures import ProcessPoolExecutor
 sys.path.append('/data2/qt/MusicGeneration/mg/model/')
 from utils.MuMIDI import MuMIDI_EventSeq
 from utils.shared import find_files_by_extensions
+import logging
+import coloredlogs
 
 
 def preprocess_MuMIDI_event(path, output_dir):
-    melody_events, arrange_events = MuMIDI_EventSeq.extract_split_events(path)
-    melody_words = MuMIDI_EventSeq.to_array(melody_events)
-    arrange_words = MuMIDI_EventSeq.to_array(arrange_events)
+    try:
+        name = path.split('/')[-1].split('.')[0] + '.data'
+        save_path = os.path.join(output_dir, name)
+        if os.path.exists(save_path):
+            return
+        melody_events, arrange_events = MuMIDI_EventSeq.extract_split_events(path)
+        if melody_events is None:
+            logger.info(f'Missing melody or tracks for {path}')
+            return
+        melody_words = MuMIDI_EventSeq.to_array(melody_events)
+        arrange_words = MuMIDI_EventSeq.to_array(arrange_events)
+        state = {'melody' : melody_words, 'arrangement' : arrange_words}
 
-    name = path.split('/')[-1].split('.')[0] + '.data'
-    state = {'melody' : melody_words, 'arrangement' : arrange_words}
-    save_path = os.path.join(output_dir, name)
-    torch.save(state, save_path)
-    print(f'success for file:{save_path}')
+        torch.save(state, save_path)
+        logger.info(f'success for file:{save_path}')
+    except Exception as e:
+        logger.warning(e)
+        logger.info(f' Error for {path}')
     return
 
 def preprocess_midi_files_under(input_dir, output_dir, num_workers):
@@ -28,6 +39,7 @@ def preprocess_midi_files_under(input_dir, output_dir, num_workers):
         output_dir += '/'
 
     midi_paths = list(find_files_by_extensions(input_dir, ['.mid', '.midi']))
+    print(len(midi_paths))
     os.makedirs(output_dir, exist_ok=True)
 
     executor = ProcessPoolExecutor(num_workers)
@@ -62,6 +74,18 @@ if __name__ == '__main__':
     # print(f'arrange_words={arrange_words}')
 
 
+    logger = logging.getLogger(__name__)
+    logger.handlers = []
+    # set up logging to console
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    # set a format which is simpler for console use
+    formatter = logging.Formatter('%(asctime)s : %(levelname)s : %(message)s',
+                                  datefmt='%Y-%m-%d %H:%M:%S')
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+
+    coloredlogs.install(level='INFO', logger=logger, isatty=True)
 
     preprocess_midi_files_under(
         input_dir=sys.argv[1],
