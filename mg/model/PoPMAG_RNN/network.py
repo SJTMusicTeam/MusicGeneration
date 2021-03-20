@@ -10,7 +10,7 @@ from PoPMAG_RNN .config import device
 #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class PoPMAG_RNN(nn.Module):
-    def __init__(self, init_dim, event_dim, hidden_dim,
+    def __init__(self, init_dim, event_dim, hidden_dim, bar_dim, embed_dim = 512,
                  rnn_layers=2, dropout=0.5):
         super().__init__()
 
@@ -24,7 +24,8 @@ class PoPMAG_RNN(nn.Module):
         self.inithid_fc = nn.Linear(init_dim, rnn_layers * hidden_dim)
         self.inithid_fc_activation = nn.Tanh()
 
-        self.event_embedding = nn.Embedding(event_dim, event_dim)
+        self.event_embedding = nn.Embedding(event_dim + bar_dim, embed_dim)
+        # self.bar_embedding = nn.Embedding(bar_dim, embed_dim)
 
         self.encoder = nn.GRU(self.event_dim, self.hidden_dim,
                           num_layers=rnn_layers, dropout=dropout)
@@ -35,6 +36,9 @@ class PoPMAG_RNN(nn.Module):
         self.output_fc = [nn.Linear(hidden_dim, self.output_dim) for i in range(3)]
 
         self.output_fc_activation = nn.Softmax(dim=-1)
+
+    def sequence_compression(self, input):
+        pass
 
     def forward(self, event, hidden=None):
         # One step forward

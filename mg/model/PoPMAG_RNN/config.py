@@ -1,13 +1,15 @@
 import torch
-from utils.sequence import EventSeq, ControlSeq
+from utils.MuMIDI import MuMIDI_EventSeq
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('cpu')
-train_mode = "segment"#segment, window, sequence
-limlen = 1200
+# train_mode = "segment"#segment, window, sequence
+
 model = {
     'init_dim': 32,
-    'event_dim': EventSeq.dim(),
+    'event_dim': MuMIDI_EventSeq.dim(),
+    'bar_dim': 200,#187
+    'embed_dim' : 512,
     'hidden_dim': 512,
     'rnn_layers': 3,
     'dropout': 0.3,

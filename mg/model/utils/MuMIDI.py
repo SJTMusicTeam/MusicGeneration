@@ -14,7 +14,7 @@ DEFAULT_DURATION_RANGE = range(DEFAULT_DURATION_STEP, 1921)
 DEFAULT_DURATION_BINS = np.arange(DEFAULT_DURATION_RANGE.start, DEFAULT_DURATION_RANGE.stop,
                                   DEFAULT_DURATION_STEP, dtype=int)
 
-DEFAULT_tempo_INTERVALS = [range(30, 90), range(90, 150), range(150, 210)]
+DEFAULT_TEMPO_INTERVALS = [range(30, 90), range(90, 150), range(150, 210)]
 
 DEFAULT_VELOCITY = 100
 DEFAULT_PITCH_RANGE = range(1, 129)
@@ -272,12 +272,16 @@ def item2event(groups):
                     text='{}/{}'.format(item.velocity, DEFAULT_VELOCITY_BINS[velocity_index])))
                 # pitch
                 if item.track == 'drum':
+                    if item.pitch < len(DEFAULT_PITCH_RANGE):
+                        item.pitch += len(DEFAULT_PITCH_RANGE)
                     events.append(Event(
                         name='note_on',
                         time=item.start,
                         value=item.pitch - DEFAULT_DRUM_TYPE.start + len(DEFAULT_PITCH_RANGE),
                         text='{}'.format(item.pitch)))
                 else:
+                    if item.pitch > len(DEFAULT_PITCH_RANGE):
+                        item.pitch -= len(DEFAULT_PITCH_RANGE)
                     events.append(Event(
                         name='note_on',
                         time=item.start,
@@ -300,22 +304,22 @@ def item2event(groups):
                     text='{}'.format(item.pitch)))
             elif item.name == 'tempo':
                 tempo = item.pitch
-                if tempo in DEFAULT_tempo_INTERVALS[0]:
+                if tempo in DEFAULT_TEMPO_INTERVALS[0]:
                     tempo_style = Event('tempo_class', item.start, 0, None)  # slow
                     tempo_value = Event('tempo_value', item.start,
-                                        tempo - DEFAULT_tempo_INTERVALS[0].start, None)
-                elif tempo in DEFAULT_tempo_INTERVALS[1]:
+                                        tempo - DEFAULT_TEMPO_INTERVALS[0].start, None)
+                elif tempo in DEFAULT_TEMPO_INTERVALS[1]:
                     tempo_style = Event('tempo_class', item.start, 1, None)  # mid
                     tempo_value = Event('tempo_value', item.start,
-                                        tempo - DEFAULT_tempo_INTERVALS[1].start, None)
-                elif tempo in DEFAULT_tempo_INTERVALS[2]:
+                                        tempo - DEFAULT_TEMPO_INTERVALS[1].start, None)
+                elif tempo in DEFAULT_TEMPO_INTERVALS[2]:
                     tempo_style = Event('tempo_class', item.start, 2, None)  # fast
                     tempo_value = Event('tempo_value', item.start,
-                                        tempo - DEFAULT_tempo_INTERVALS[2].start, None)
-                elif tempo < DEFAULT_tempo_INTERVALS[0].start:
+                                        tempo - DEFAULT_TEMPO_INTERVALS[2].start, None)
+                elif tempo < DEFAULT_TEMPO_INTERVALS[0].start:
                     tempo_style = Event('tempo_class', item.start, 0, None)  # slow
                     tempo_value = Event('tempo_value', item.start, 0, None)
-                elif tempo > DEFAULT_tempo_INTERVALS[2].stop:
+                elif tempo > DEFAULT_TEMPO_INTERVALS[2].stop:
                     tempo_style = Event('tempo_class', item.start, 2, None)  # fast
                     tempo_value = Event('tempo_value', item.start, 59, None)
                 events.append(tempo_style)
@@ -333,6 +337,8 @@ class MuMIDI_EventSeq:
     velocity_range = DEFAULT_VELOCITY_RANGE
     velocity_steps = DEFAULT_VELOCITY_STEPS
     duration_bins = DEFAULT_DURATION_BINS
+    feats_ranges = None
+    idxs_feats = None
 
     def __init__(self, events=[]):
         pass
@@ -362,33 +368,48 @@ class MuMIDI_EventSeq:
         'maj','min','dim','aug','dom' # 5
         """
         feat_dims = collections.OrderedDict()
-        feat_dims['note_on'] = len(MuMIDI_EventSeq.pitch_range) + len(DEFAULT_DRUM_TYPE)
+        feat_dims['note_on'] = len(MuMIDI_EventSeq.pitch_range) + len(DEFAULT_DRUM_TYPE)#0-255
         # feat_dims['drum_type'] = len(DEFAULT_DRUM_TYPE)
-        feat_dims['note_duration'] = len(MuMIDI_EventSeq.duration_bins)
-        feat_dims['note_velocity'] = len(DEFAULT_VELOCITY_BINS)
-        feat_dims['bar'] = 1
-        feat_dims['position'] = DEFAULT_FRACTION + 1
-        feat_dims['track'] = len(DEFAULT_TRACKS)
-        feat_dims['tempo_class'] = len(DEFAULT_tempo_INTERVALS)
-        feat_dims['tempo_value'] = len(DEFAULT_tempo_INTERVALS[0])
-        feat_dims['chord'] = len(chord_map)
+        feat_dims['note_duration'] = len(MuMIDI_EventSeq.duration_bins)#256-287
+        feat_dims['note_velocity'] = len(DEFAULT_VELOCITY_BINS)#288-319
+        feat_dims['bar'] = 1#320
+        feat_dims['position'] = DEFAULT_FRACTION + 1#321-353
+        feat_dims['track'] = len(DEFAULT_TRACKS)#354-359
+        feat_dims['tempo_class'] = len(DEFAULT_TEMPO_INTERVALS)#360-362
+        feat_dims['tempo_value'] = len(DEFAULT_TEMPO_INTERVALS[0])#363-422
+        feat_dims['chord'] = len(chord_map)#423-472
         return feat_dims
 
     @staticmethod
     def dims_feat():
+        if MuMIDI_EventSeq.idxs_feats is not None:
+            return MuMIDI_EventSeq.idxs_feats
         offset = 0
         feat_ranges = collections.OrderedDict()
         idxs_feat = collections.OrderedDict()
         for feat_name, feat_dim in MuMIDI_EventSeq.feat_dims().items():
             feat_ranges[feat_name] = range(offset, offset + feat_dim)
             for i in range(0, feat_dim):
-                idxs_feat[offset + i] = (feat_name, i)
+                if feat_name == 'track':
+                    idxs_feat[offset + i] = (DEFAULT_TRACKS[i], i)
+                else:
+                    idxs_feat[offset + i] = (feat_name, i)
             offset += feat_dim
         # print(idxs_feat)
+        MuMIDI_EventSeq.idxs_feats = idxs_feat
         return idxs_feat
 
     @staticmethod
+    def check(feat_name, idx):
+        feat_range = MuMIDI_EventSeq.feat_ranges()
+        if idx in feat_range[feat_name]:
+            return True
+        return False
+
+    @staticmethod
     def feat_ranges():
+        if MuMIDI_EventSeq.feats_ranges is not None:
+            return MuMIDI_EventSeq.feats_ranges
         offset = 0
         feat_ranges = collections.OrderedDict()
         for feat_name, feat_dim in MuMIDI_EventSeq.feat_dims().items():
@@ -396,6 +417,7 @@ class MuMIDI_EventSeq:
             offset += feat_dim
         # print('feat_range:')
         # print(feat_ranges)
+        MuMIDI_EventSeq.feats_ranges = feat_ranges
         return feat_ranges
 
     @staticmethod
@@ -405,6 +427,7 @@ class MuMIDI_EventSeq:
 
         max_time = note_items[-1].end
         chord_items = extract_chords(note_items)
+        # print(f'chord={chord_items}')
 
         items = chord_items + tempo_items + note_items
         groups = group_items(items, max_time)
@@ -442,9 +465,11 @@ class MuMIDI_EventSeq:
     @staticmethod
     def filter_melody(arr):
         idxs_feats = MuMIDI_EventSeq.dims_feat()
-        print([ idxs_feats[item][0] == 'melody' for item in arr])
+        # print(idxs_feats)
+        # print([ idxs_feats[item][0] == 'melody' for item in arr])
         counts = np.sum([ idxs_feats[item][0] == 'melody' for item in arr])
-        if counts>10:
+        # print(counts)
+        if counts > 0:
             return True
         return False
 
@@ -476,6 +501,22 @@ class MuMIDI_EventSeq:
             if check(event.name, keys):
                 res.append(event)
 
+        return res
+
+    @staticmethod
+    def count_bar(seq):
+        idx = MuMIDI_EventSeq.feat_ranges()['bar'][0]
+        res = np.sum([idx == item for item in seq])
+        return res
+
+    @staticmethod
+    def segmentation(seq):
+        idx = MuMIDI_EventSeq.feat_ranges()['bar'][0]
+        idxs = seq.index(idx)
+        idx.append(len(seq)+1)
+        res = []
+        for start, end in zip(idx[:-1],idx[1:]):
+            res.append(seq[start:end])
         return res
 
     @staticmethod
@@ -554,7 +595,7 @@ class MuMIDI_EventSeq:
                 elif events[i].name == 'tempo_class' and \
                         events[i + 1].name == 'tempo_value':
                     position = int(events[i].value)
-                    tempo = DEFAULT_tempo_INTERVALS[events[i].value].start + int(events[i + 1].value)
+                    tempo = DEFAULT_TEMPO_INTERVALS[events[i].value].start + int(events[i + 1].value)
                     temp_tempos.append([position, tempo])
         # get specific time for notes
         ticks_per_beat = DEFAULT_RESOLUTION
@@ -654,6 +695,7 @@ if __name__ == '__main__':
     pb = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_aft.midi'
     #events = preprocess_REMI_event(pp)
     events = MuMIDI_EventSeq.extract_events(pp)
+    print(events)
     MuMIDI_EventSeq.write_midi(events, pa)
     # print('*'*10)
     words = MuMIDI_EventSeq.to_array(events)

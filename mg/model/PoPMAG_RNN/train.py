@@ -30,7 +30,7 @@ def get_options():
     parser.add_option('-d', '--dataset',
                       dest='data_path',
                       type='string',
-                      default='/data2/qt/MusicGeneration/egs/dataset/egs/dataset/lmd_matched_split/')
+                      default='/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split/train.pth')
 
     parser.add_option('-e', '--epochs',
                       dest='epochs',
@@ -155,16 +155,16 @@ print('-' * 70)
 def load_model():
     global model_config, device, learning_rate
     model = PoPMAG_RNN(**model_config)
-    # model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/segment_512_3_1_epoch_239.pth'))
+    # model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/PoPMAG_RNN/save_model/segment_512_3_1_epoch_239.pth'))
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return model, optimizer
 
 
-def load_dataset(limlen):
+def load_dataset():
     global data_path
-    dataset = Melody_Arrangement_Dataset(data_path, limlen, verbose=True)
-    dataset_size = len(dataset.samples)
+    dataset = Melody_Arrangement_Dataset.load_file(data_path)
+    dataset_size = len(dataset.melody_seqs)
     assert dataset_size > 0
     return dataset
 
