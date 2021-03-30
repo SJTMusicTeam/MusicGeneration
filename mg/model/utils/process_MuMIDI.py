@@ -7,6 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 sys.path.append('/data2/qt/MusicGeneration/mg/model/')
 from utils.MuMIDI import MuMIDI_EventSeq
 from utils.shared import find_files_by_extensions
+from utils.data import Melody_Arrangement_Dataset
 import logging
 import coloredlogs
 
@@ -23,7 +24,16 @@ def preprocess_MuMIDI_event(path, output_dir):
             return
         melody_words = MuMIDI_EventSeq.to_array(melody_events)
         arrange_words = MuMIDI_EventSeq.to_array(arrange_events)
-        state = {'melody' : melody_words, 'arrangement' : arrange_words}
+
+        melody_seq_bar = MuMIDI_EventSeq.segmentation(melody_words)
+        arrange_seq_bar = MuMIDI_EventSeq.segmentation(arrange_words)
+
+        melody_bar, melody_bar_mask = Melody_Arrangement_Dataset.get_mask(melody_seq_bar, 0)
+        arrange_bar, arrange_bar_mask = Melody_Arrangement_Dataset.get_mask(arrange_seq_bar, -1)
+        label, label_mask = Melody_Arrangement_Dataset.label_mask(arrange_words)
+
+        state = {'melody' : melody_words, 'arrangement' : arrange_words, 'melody_bar' : melody_bar, 'melody_bar_mask' : melody_bar_mask\
+            , 'arrangement_bar' : arrange_bar, 'arrange_bar_mask':arrange_bar_mask, 'label':label, 'label_mask': label_mask }
 
         torch.save(state, save_path)
         logger.info(f'success for file:{save_path}')
@@ -60,6 +70,7 @@ def preprocess_midi_files_under(input_dir, output_dir, num_workers):
 
 
 if __name__ == '__main__':
+
     # pp = '/data2/qt/MusicGeneration/egs/dataset/multi_tracks/six_tracks_test.mid'
     # pa = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_bef.midi'
     # pb = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_aft.midi'
@@ -86,6 +97,10 @@ if __name__ == '__main__':
     logger.addHandler(console)
 
     coloredlogs.install(level='INFO', logger=logger, isatty=True)
+
+    # pp = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_merged/0a8b29fbd2d0aa0b2a0078464ea093aa_896e8cff892d1293590bce1cae38109c.mid'
+    # out_dir = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split'
+    # preprocess_MuMIDI_event(pp, out_dir)
 
     preprocess_midi_files_under(
         input_dir=sys.argv[1],

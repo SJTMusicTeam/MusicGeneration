@@ -272,16 +272,16 @@ def item2event(groups):
                     text='{}/{}'.format(item.velocity, DEFAULT_VELOCITY_BINS[velocity_index])))
                 # pitch
                 if item.track == 'drum':
-                    if item.pitch < len(DEFAULT_PITCH_RANGE):
-                        item.pitch += len(DEFAULT_PITCH_RANGE)
+                    # if item.pitch < len(DEFAULT_PITCH_RANGE):
+                    #     item.pitch += len(DEFAULT_PITCH_RANGE)
                     events.append(Event(
                         name='note_on',
                         time=item.start,
                         value=item.pitch - DEFAULT_DRUM_TYPE.start + len(DEFAULT_PITCH_RANGE),
                         text='{}'.format(item.pitch)))
                 else:
-                    if item.pitch > len(DEFAULT_PITCH_RANGE):
-                        item.pitch -= len(DEFAULT_PITCH_RANGE)
+                    # if item.pitch > len(DEFAULT_PITCH_RANGE):
+                    #     item.pitch -= len(DEFAULT_PITCH_RANGE)
                     events.append(Event(
                         name='note_on',
                         time=item.start,
@@ -368,6 +368,7 @@ class MuMIDI_EventSeq:
         'maj','min','dim','aug','dom' # 5
         """
         feat_dims = collections.OrderedDict()
+        feat_dims['empty'] = 1
         feat_dims['note_on'] = len(MuMIDI_EventSeq.pitch_range) + len(DEFAULT_DRUM_TYPE)#0-255
         # feat_dims['drum_type'] = len(DEFAULT_DRUM_TYPE)
         feat_dims['note_duration'] = len(MuMIDI_EventSeq.duration_bins)#256-287
@@ -446,6 +447,7 @@ class MuMIDI_EventSeq:
 
         items = chord_items + tempo_items + note_items
         groups = group_items(items, max_time)
+        # print(f'melody_bars={len(groups)}')
         melody_events = item2event(groups)
 
         note_items, tempo_items = read_items(input_path, con_instr=['piano', 'bass', 'guitar', 'string', 'drum'])
@@ -458,6 +460,7 @@ class MuMIDI_EventSeq:
 
         items = chord_items + tempo_items + note_items
         groups = group_items(items, max_time)
+        # print(f'arrange_bars={len(groups)}')
         arrange_events = item2event(groups)
 
         return melody_events, arrange_events
@@ -512,10 +515,13 @@ class MuMIDI_EventSeq:
     @staticmethod
     def segmentation(seq):
         idx = MuMIDI_EventSeq.feat_ranges()['bar'][0]
-        idxs = seq.index(idx)
-        idx.append(len(seq)+1)
+        seq = np.array(seq)
+        idxs = np.where(seq == idx)[0]
+        # print(idxs)
+        idxs = np.append(idxs,len(seq)+1)
+        # print(idxs)
         res = []
-        for start, end in zip(idx[:-1],idx[1:]):
+        for start, end in zip(idxs[:-1],idxs[1:]):
             res.append(seq[start:end])
         return res
 
@@ -580,8 +586,12 @@ class MuMIDI_EventSeq:
                     velocity = int(DEFAULT_VELOCITY_BINS[index])
                     # pitch
                     if track == 'drum':
+                        if events[i + 1].value < len(DEFAULT_PITCH_RANGE):
+                            events[i + 1].value += len(DEFAULT_PITCH_RANGE)
                         pitch = int(events[i + 1].value) + DEFAULT_DRUM_TYPE.start - len(DEFAULT_PITCH_RANGE)
                     else:
+                        if events[i + 1].value >= len(DEFAULT_PITCH_RANGE):
+                            events[i + 1].value -= len(DEFAULT_PITCH_RANGE)
                         pitch = int(events[i + 1].value) + DEFAULT_PITCH_RANGE.start
 
                     # print(f'track={track}, pitch={pitch}')
@@ -693,14 +703,16 @@ if __name__ == '__main__':
     pp = '/data2/qt/MusicGeneration/egs/dataset/multi_tracks/six_tracks_test.mid'
     pa = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_bef.midi'
     pb = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_aft.midi'
+    melody_events, arrange_events = MuMIDI_EventSeq.extract_split_events(pp)
     #events = preprocess_REMI_event(pp)
-    events = MuMIDI_EventSeq.extract_events(pp)
-    print(events)
-    MuMIDI_EventSeq.write_midi(events, pa)
-    # print('*'*10)
-    words = MuMIDI_EventSeq.to_array(events)
-    event = MuMIDI_EventSeq.to_event(words)
-    MuMIDI_EventSeq.write_midi(event, pb)
+    # events = MuMIDI_EventSeq.extract_events(pp)
+    # print(events)
+    # MuMIDI_EventSeq.write_midi(events, pa)
+    # # print('*'*10)
+    # words = MuMIDI_EventSeq.to_array(events)
+    # print(words[:100])
+    # event = MuMIDI_EventSeq.to_event(words)
+    # MuMIDI_EventSeq.write_midi(event, pb)
     #
     # print(*events[:10],sep='\n')
     # print('*'*10)
