@@ -24,16 +24,17 @@ def preprocess_MuMIDI_event(path, output_dir):
             return
         melody_words = MuMIDI_EventSeq.to_array(melody_events)
         arrange_words = MuMIDI_EventSeq.to_array(arrange_events)
+        state = {'melody' : melody_words, 'arrangement' : arrange_words}
 
-        melody_seq_bar = MuMIDI_EventSeq.segmentation(melody_words)
-        arrange_seq_bar = MuMIDI_EventSeq.segmentation(arrange_words)
+        # melody_seq_bar = MuMIDI_EventSeq.segmentation(melody_words)
+        # arrange_seq_bar = MuMIDI_EventSeq.segmentation(arrange_words)
+        #
+        # melody_bar, melody_bar_mask = Melody_Arrangement_Dataset.get_mask(melody_seq_bar, 0)
+        # arrange_bar, arrange_bar_mask = Melody_Arrangement_Dataset.get_mask(arrange_seq_bar, -1)
+        # label, label_mask = Melody_Arrangement_Dataset.label_mask(arrange_words)
 
-        melody_bar, melody_bar_mask = Melody_Arrangement_Dataset.get_mask(melody_seq_bar, 0)
-        arrange_bar, arrange_bar_mask = Melody_Arrangement_Dataset.get_mask(arrange_seq_bar, -1)
-        label, label_mask = Melody_Arrangement_Dataset.label_mask(arrange_words)
-
-        state = {'melody' : melody_words, 'arrangement' : arrange_words, 'melody_bar' : melody_bar, 'melody_bar_mask' : melody_bar_mask\
-            , 'arrangement_bar' : arrange_bar, 'arrange_bar_mask':arrange_bar_mask, 'label':label, 'label_mask': label_mask }
+        # state = {'melody' : melody_words, 'arrangement' : arrange_words, 'melody_bar' : melody_bar, 'melody_bar_mask' : melody_bar_mask\
+        #     , 'arrangement_bar' : arrange_bar, 'arrange_bar_mask':arrange_bar_mask, 'label':label, 'label_mask': label_mask }
 
         torch.save(state, save_path)
         logger.info(f'success for file:{save_path}')

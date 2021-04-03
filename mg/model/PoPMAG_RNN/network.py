@@ -8,13 +8,21 @@ from utils.MuMIDI import MuMIDI_EventSeq
 import numpy as np
 from progress.bar import Bar
 from PoPMAG_RNN .config import device
+from collections import defaultdict
+import sys
+sys.path.append('/data2/qt/MusicGeneration/mg/model/')
+
+from utils.data import Melody_Arrangement_Dataset
+
 #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class PoPMAG_RNN(nn.Module):
+
     def __init__(self, init_dim, event_dim, hidden_dim, bar_dim, embed_dim = 512,
-                 rnn_layers=2, dropout=0.5):
+                 rnn_layers = 2, dropout = 0.5):
         super().__init__()
 
+        feat_dim = MuMIDI_EventSeq.feat_dims()
         self.event_dim = event_dim
         self.init_dim = init_dim
         self.hidden_dim = hidden_dim
@@ -37,8 +45,14 @@ class PoPMAG_RNN(nn.Module):
                               num_layers=rnn_layers, dropout=dropout)
         #self.output_fc = nn.Linear(hidden_dim * rnn_layers, self.output_dim)
         self.output_fc = nn.ModuleList()
-        for i in range(3):
-            self.output_fc.append( nn.Linear(hidden_dim, self.output_dim) )
+
+        self.embed_shift = [1 + feat_dim['note_on'] + feat_dim['note_duration'], 1, 1 + feat_dim['note_on'] ]
+        # print([self.output_dim - 1 - feat_dim['note_on'] - feat_dim['note_velocity'], feat_dim['note_on'], feat_dim['note_duration']])
+        self.out_len = [self.output_dim - 1 - feat_dim['note_on'] - feat_dim['note_velocity'], feat_dim['note_on'], feat_dim['note_duration']]
+        self.mx_dim = max( self.out_len )
+        self.output_fc.append( nn.Linear(hidden_dim, self.output_dim - 1 - feat_dim['note_on'] - feat_dim['note_velocity']) )
+        self.output_fc.append( nn.Linear(hidden_dim, feat_dim['note_on']) )
+        self.output_fc.append( nn.Linear(hidden_dim, feat_dim['note_duration']) )
 
         self.output_fc_activation = nn.Softmax(dim=-1)
 
@@ -180,7 +194,7 @@ class PoPMAG_RNN(nn.Module):
         # print(f'paced_src={packed_src}')
         # packed_output, self.state = self.encoder(embedding_packed, state)  # output, (h, c)
         # outputs, inputs_size = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
-        packed_output, state = self.encoder(packed_src, hidden)  # output, (h, c)
+        packed_output, state = self.encoder(packed_src, hidden)
         outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
 
         # state.index_select(0, reversed_idx)
@@ -195,18 +209,58 @@ class PoPMAG_RNN(nn.Module):
         :return:
         """
         packed_tar = nn.utils.rnn.pack_padded_sequence(tar, tar_mask, batch_first=True, enforce_sorted=False)
-        packed_output, state = self.decoder(packed_tar, hidden)  # output, (h, c)
+        packed_output, state = self.decoder(packed_tar, hidden)
         outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
         return outputs, state
+    #
+    # def decoder_one_step(self, tar, hidden, tar_mask):
+    #     """
+    #     :param tar: [batch_size, bar_len, embed_size]
+    #     :param hidden: [batch_size, rnn_layers * hidden_dim]
+    #     :param tar_mask: [batc_size, bar_len]
+    #     :return:
+    #     """
+    #     flag = 0
+    #     batch = tar.shape[0]
+    #     lens = np.zeros(batch)
+    #
+    #     batch_output = defaultdict(list)
+    #     for idx in range(batch):
+    #         batch_output[idx] = tar.numpy().tolist()
+    #
+    #     tar = tar.permute(1, 0, 2).contiguous()
+    #     while flag < batch:
+    #         output, state = self.decoder(tar, hidden)
+    #         step_output = self.final_predict(output) # [1, batch, 3, event_dim]
+    #         event_type = self._sample_event(step_output[:, :, 1, :])
+    #         for idx in range(batch):
+    #             if MuMIDI_EventSeq.check(event_type, 'bar'):
+    #                 if lens[idx] == 0:
+    #                     lens[idx] = len(batch_output[idx])
+    #                     flag += 1
+    #
+    #
+    #
+    #
+    #     return outputs, state
 
     def final_predict(self, input):
-        print(f'input_shape={input.shape}')
-        prob = [ layer(input) for layer in self.output_fc ]
-        print(f'len_prob={len(prob)}')
-        print(f'prob[0]_shape={prob[0].shape}')
-
-        prob = torch.stack(prob, dim=-2)
-        return self.output_fc_activation(prob)# [batch, mx_*, 3, event_dim]
+        # print(f'input_shape={input.shape}')
+        batch, stpes, _ = input.shape
+        prob = [  self.output_fc_activation(layer(input)) for layer in self.output_fc ]
+        pad_pro = torch.zeros((batch, stpes, 3, self.mx_dim), device=device)
+        # print(f'len_prob={len(prob)}')
+        # print(f'prob[0]_shape={prob[0].shape}')
+        # print(f'prob[1]_shape={prob[1].shape}')
+        # print(f'prob[2]_shape={prob[2].shape}')
+        for i in range(batch):
+            pad_pro[: , :, i, :prob[i].shape[2]] = prob[i]
+        # prob = nn.utils.rnn.pack_padded_sequence(prob, self.out_len, batch_first=True, enforce_sorted=False)
+        # print(f'len_prob={len(prob)}')
+        # print(f'prob[0]_shape={prob[0].shape}')
+        return pad_pro
+        #prob = torch.stack(prob, dim=-2)
+        #return self.output_fc_activation(prob)# [batch, mx_*, event_dim]
 
     def Train(self, init, src, src_mask, tar, tar_mask):
         # init [batch_size, init_dim]
@@ -220,9 +274,10 @@ class PoPMAG_RNN(nn.Module):
         # print(f'tar.shape={tar.shape}')
         src_bar_nums = src.shape[1]
         tar_bar_nums = tar.shape[1]
-        bar_nums = max(src_bar_nums, tar_bar_nums)
-        batch, bar_num, bar_len = tar.shape
-        batch_outputs = torch.zeros((batch, bar_num, bar_len, self.embed_dim))
+        bar_nums = tar_bar_nums
+        batch, bar_num, bar_len, _ = tar.shape
+        # batch_outputs = torch.zeros_like(tar)
+        batch_outputs = torch.zeros((batch, bar_num, bar_len, 3, self.mx_dim), device=device)
         for step in range(bar_nums):
             if step < src_bar_nums:
                 encoder_output, encoder_hidden = self.encoder_input(src[:, step, :, :], hidden, src_mask[:, step])
@@ -234,64 +289,93 @@ class PoPMAG_RNN(nn.Module):
                 # print(f'decoder_output.shape={decoder_output.shape}')
                 # print(f'decoder_hidden.shape={decoder_hidden.shape}')
 
-            if step <= src_bar_nums:
-                hidden = encoder_hidden
-            else:
-                hidden = encoder_hidden + decoder_hidden
+            # if step <= src_bar_nums:
+            #     hidden = encoder_hidden
+            # else:
+            #     hidden = encoder_hidden + decoder_hidden
+            hidden = encoder_hidden + decoder_hidden
             # print(f'decoder_dev = {decoder_output.device}')
             res = self.final_predict(decoder_output)
             # print(res)
-            print(f'res.shape={res.shape}')
+            # print(f'res.shape={res.shape}')
             lens = res.shape[1]
-            batch_outputs[:, step, :lens, :] = res
+            batch_outputs[:, step, :lens, :, :] = res
             # batch_outputs.append(res)
 
         return batch_outputs
 
+    # def generate(self, init, steps, events=None, greedy=1.0,
+    #              temperature=1.0, teacher_forcing_ratio=1.0, output_type='index', verbose=False):
+    #     # init [batch_size, init_dim]
+    #     # events [steps, batch_size] indeces
+    #     # controls [1 or steps, batch_size, control_dim]
+    #
+    #     batch_size = init.shape[0]
+    #     assert init.shape[1] == self.init_dim
+    #     hidden = self.init_to_hidden(init)
+    #
+    #     outputs = []
+    #
+    #
+    #     output, hidden = self.gen_forward(steps, hidden) #forward one bar
+    #
+    #     use_greedy = np.random.random() < greedy
+    #     event = self._sample_event(output, greedy=use_greedy,
+    #                                temperature=temperature)
+    #
+    #     if output_type == 'index':
+    #         outputs.append(event)
+    #     elif output_type == 'softmax':
+    #         outputs.append(self.output_fc_activation(output))
+    #     elif output_type == 'logit':
+    #         outputs.append(output)
+    #     else:
+    #         assert False
+    #
+    #     if use_teacher_forcing and step < steps - 1:  # avoid last one
+    #         if np.random.random() <= teacher_forcing_ratio:
+    #             event = events[step].unsqueeze(0)
+    #
+    #     return torch.cat(outputs, 0)
 
-    def generate(self, init, steps, events=None, greedy=1.0,
-                 temperature=1.0, teacher_forcing_ratio=1.0, output_type='index', verbose=False):
-        # init [batch_size, init_dim]
-        # events [steps, batch_size] indeces
-        # controls [1 or steps, batch_size, control_dim]
 
-        batch_size = init.shape[0]
-        assert init.shape[1] == self.init_dim
-        assert steps > 0
-
-        use_teacher_forcing = events is not None
-        if use_teacher_forcing:
-            assert len(events.shape) == 2
-            assert events.shape[0] >= steps - 1
-            events = events[:steps - 1]
-
-        event = self.get_primary_event(batch_size)
-
-        hidden = self.init_to_hidden(init)
-
-        outputs = []
-        step_iter = range(steps)
-        if verbose:
-            step_iter = Bar('Generating').iter(step_iter)
-
-        for step in step_iter:
-            output, hidden = self.gen_forward(event, hidden) #forward one step
-
-            use_greedy = np.random.random() < greedy
-            event = self._sample_event(output, greedy=use_greedy,
-                                       temperature=temperature)
-
-            if output_type == 'index':
-                outputs.append(event)
-            elif output_type == 'softmax':
-                outputs.append(self.output_fc_activation(output))
-            elif output_type == 'logit':
-                outputs.append(output)
-            else:
-                assert False
-
-            if use_teacher_forcing and step < steps - 1:  # avoid last one
-                if np.random.random() <= teacher_forcing_ratio:
-                    event = events[step].unsqueeze(0)
-
-        return torch.cat(outputs, 0)
+    # def generate_arrangement(self, init, src, src_mask, n_target_bar):
+    #
+    #     feat_dim = MuMIDI_EventSeq.feat_ranges()
+    #     #random start
+    #     words = []
+    #     for _ in range(self.batch_size):
+    #         ws = [ feat_dim['bar'][0] ]
+    #
+    #         tempo_classes = feat_dim['tempo_class']
+    #         tempo_values = feat_dim['tempo_value']
+    #         tracks = feat_dim['track'][1:]
+    #         ws.append(feat_dim['position'][1])
+    #         ws.append(np.random.choice(tempo_classes))
+    #         ws.append(np.random.choice(tempo_values))
+    #         ws.append(np.random.choice(tracks))
+    #         words.append(ws)
+    #     tar, tar_mask = Melody_Arrangement_Dataset.get_mask(words, 0)
+    #
+    #     src_bar_nums = src.shape[1]
+    #     bar_nums = src_bar_nums
+    #     # init [batch_size, init_dim]
+    #     hidden = self.init_to_hidden(init)
+    #
+    #     for step in range(bar_nums):
+    #         if step < src_bar_nums:
+    #             encoder_output, encoder_hidden = self.encoder_input(src[:, step, :, :], hidden, src_mask[:, step])
+    #
+    #         if step < n_target_bar:
+    #
+    #             decoder_output, decoder_hidden = self.decoder_one_step(tar[:, step, :, :], encoder_hidden, tar_mask[:, step])
+    #             # print(f'decoder_output.shape={decoder_output.shape}')
+    #             # print(f'decoder_hidden.shape={decoder_hidden.shape}')
+    #
+    #         hidden = encoder_hidden + decoder_hidden
+    #         res = self.final_predict(decoder_output)
+    #         lens = res.shape[1]
+    #         batch_outputs[:, step, :lens, :, :] = res
+    #         # batch_outputs.append(res)
+    #
+    #     return batch_outputs

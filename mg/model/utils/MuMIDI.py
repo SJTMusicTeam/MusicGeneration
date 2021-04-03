@@ -17,14 +17,14 @@ DEFAULT_DURATION_BINS = np.arange(DEFAULT_DURATION_RANGE.start, DEFAULT_DURATION
 DEFAULT_TEMPO_INTERVALS = [range(30, 90), range(90, 150), range(150, 210)]
 
 DEFAULT_VELOCITY = 100
-DEFAULT_PITCH_RANGE = range(1, 129)
+DEFAULT_PITCH_RANGE = range(1, 129)#range(0,128)
 
 DEFAULT_VELOCITY_STEPS = 4 #32
 DEFAULT_VELOCITY_RANGE = range(DEFAULT_VELOCITY_STEPS, 129)
 DEFAULT_VELOCITY_BINS = np.arange(DEFAULT_VELOCITY_RANGE.start, DEFAULT_VELOCITY_RANGE.stop,
                                   DEFAULT_VELOCITY_STEPS)
 
-DEFAULT_DRUM_TYPE = range(1,129)#range(35, 82)
+DEFAULT_DRUM_TYPE = range(1, 129)#range(35, 82) #range(0,128)
 
 # parameters for output
 DEFAULT_RESOLUTION = 480
@@ -672,13 +672,7 @@ class MuMIDI_EventSeq:
             inst = miditoolkit.midi.containers.Instrument(program=Pro_id, is_drum=IS_DRUM,name=track)
             inst.notes = notes[track]
             midi.instruments.append(inst)
-        # print(midi.instruments)
-        # for inst in midi.instruments:
-        #     print(inst)
-        #     print(inst.notes)
-        #     print('*'*10)
-        # print('-'*20)
-        # write tempo
+
         tempo_changes = []
         for st, bpm in tempos:
             tempo_changes.append(miditoolkit.midi.containers.TempoChange(bpm, st))

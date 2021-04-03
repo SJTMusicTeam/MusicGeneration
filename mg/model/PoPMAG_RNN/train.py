@@ -30,7 +30,7 @@ def get_options():
     parser.add_option('-d', '--dataset',
                       dest='data_path',
                       type='string',
-                      default='/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split/vaild.pth')
+                      default='/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split/train.pth')
 
     parser.add_option('-e', '--epochs',
                       dest='epochs',
@@ -181,8 +181,8 @@ print('-' * 70)
 
 def save_model(epoch):
     global model, optimizer, model_config, save_path
-    print('Saving to', save_path+config.train_mode+'_512_3_epoch_'+str(epoch)+'.pth')
-    torch.save(model.state_dict(),  save_path+config.train_mode+'_512_3_1_epoch_'+str(epoch)+'.pth')
+    print('Saving to', save_path+'256_256_2_epoch_'+epoch+'.pth')
+    torch.save(model.state_dict(),  save_path+'256_256_2_epoch_'+epoch+'.pth')
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -221,9 +221,9 @@ for epoch in range(epochs):
             tar_mask = tar_mask.to(device)
             label = label.to(device)
             label_mask = label_mask.to(device)
-            print(f'src={src.shape}')
-            print(f'tar={tar.shape}')
-            print(f'label={label.shape}')
+            # print(f'src={src.shape}')
+            # print(f'tar={tar.shape}')
+            # print(f'label={label.shape}')
 
             comp_src = model.compression(src)
             comp_tar = model.compression(tar)
@@ -242,10 +242,15 @@ for epoch in range(epochs):
             # # print(label.shape)
             outputs = model.Train(init, src=comp_src, src_mask=src_mask, tar=comp_tar, tar_mask=tar_mask)
             init.detach_()
-            print(f'output_shape={outputs.shape}')
-            loss = loss_function(outputs.view(-1, event_dim), label.view(-1))
-            print(f'loss.shape={loss.shape}')
+            # print(f'output_shape={outputs.shape}')
+            # print(f'outputs.dev={outputs.device}, label.dev={label.device}')
+
+            loss = loss_function(outputs.view(-1, model.mx_dim), label.view(-1))
+            # loss = [loss_function(outputs[i], label[:, :, :, i]) * label_mask[:, :, :, i] for i in range(3)]
+            # print(f'loss.shape={loss.shape}')
             loss = torch.mean(loss * label_mask.view(-1))
+            # loss = torch.mean(loss)
+            # print(f'loss={loss}')
             model.zero_grad()
             #
             loss.backward()
@@ -253,20 +258,21 @@ for epoch in range(epochs):
             l_sum += loss.item()
             n += 1
             # # norm = utils.compute_gradient_norm(model.parameters())
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm)
             # # nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_norm, norm_type=1)
             #
             optimizer.step()
             #
-            if (iteration+1) % 1 == 0:
+            if (iteration+1) % 100 == 0:
                 print(f'epoch {epoch}, iter {iteration}, loss: {loss.item()}')
+                save_model(str(epoch)+'_'+str(iteration))
 
         print(f'epoch {epoch}, ave-loss: {l_sum/n}, epoch time: {time.time()-last_saving_time}')
         last_saving_time = time.time()
-        # save_model(epoch)
+        save_model(str(epoch)+'_')
 
     except KeyboardInterrupt:
-        # save_model(epoch)
+        save_model(str(epoch)+'_')
         break
 
 

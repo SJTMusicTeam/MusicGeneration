@@ -8,19 +8,19 @@ train_mode = "bar"
 model = {
     'init_dim': 32,
     'event_dim': MuMIDI_EventSeq.dim(),
-    'bar_dim': 200,#187
-    'embed_dim' : 512,
-    'hidden_dim': 512,
-    'rnn_layers': 3,
-    'dropout': 0.3,
+    'bar_dim': 188,#187
+    'embed_dim' : 256,
+    'hidden_dim': 256,
+    'rnn_layers': 2,
+    'dropout': 0.2,
 }
 
 train = {
-    'learning_rate': 0.001,
-    'batch_size': 4,
+    'learning_rate': 0.0001,
+    'batch_size': 2,
     'window_size': 200,
     'stride_size': 10,
     'use_transposition': False,
     'teacher_forcing_ratio': 1.0,
-    'clip_norm' : 1.0
+    'clip_norm' : 3.0
 }

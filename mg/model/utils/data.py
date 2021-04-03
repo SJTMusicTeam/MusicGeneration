@@ -195,6 +195,18 @@ class Melody_Arrangement_Dataset:
         if n_bar < model['bar_dim']:
             return model['event_dim'] + n_bar
         return model['event_dim'] + model['bar_dim'] - 1
+    @staticmethod
+    def pos_id(num):
+        from mg.model.utils.MuMIDI import MuMIDI_EventSeq as MU
+        feat_range = MU.feat_ranges()
+        return feat_range['position'][num]
+
+    @staticmethod
+    def bar():
+        from mg.model.utils.MuMIDI import MuMIDI_EventSeq as MU
+        feat_range = MU.feat_ranges()
+        return feat_range['bar'][0]
+
 
     @staticmethod
     def event_dim():
@@ -231,7 +243,13 @@ class Melody_Arrangement_Dataset:
 
                 while i < len(bar_items):
                     # item = np.zeros(7)
-                    if MuMIDI_EventSeq.check('position', bar_items[i]):
+                    if MuMIDI_EventSeq.check('bar', bar_items[i]):
+                        item = torch.LongTensor([Melody_Arrangement_Dataset.bar_id(n_bar), \
+                                                 Melody_Arrangement_Dataset.pos_id(0),\
+                                                 0, 0, Melody_Arrangement_Dataset.bar(), 0, 0])
+                        bar_seq.append(item)
+                        i += 1
+                    elif MuMIDI_EventSeq.check('position', bar_items[i]):
                         n_pos = bar_items[i]
                         pos_embed = n_pos
                         i += 1
@@ -243,12 +261,12 @@ class Melody_Arrangement_Dataset:
                         i += 2
                         bar_seq.append(torch.LongTensor([bar_embed, pos_embed, tempo_cls, 0, 0, 0, 0]))
                         bar_seq.append(torch.LongTensor([bar_embed, pos_embed, 0, tempo_val, 0, 0, 0]))
-                    elif i+2 < len(bar_items) and MuMIDI_EventSeq.check('note_on', bar_items[i]) \
-                            and MuMIDI_EventSeq.check('note_duration', bar_items[i + 1]) \
-                            and MuMIDI_EventSeq.check('note_velocity', bar_items[i + 2]):
-                        pitch = bar_items[i]
-                        duration = bar_items[i + 1]
-                        velocity = bar_items[i + 2]
+                    elif i+2 < len(bar_items) and MuMIDI_EventSeq.check('note_velocity', bar_items[i]) \
+                            and MuMIDI_EventSeq.check('note_on', bar_items[i + 1]) \
+                            and MuMIDI_EventSeq.check('note_duration', bar_items[i + 2]):
+                        velocity = bar_items[i]
+                        pitch = bar_items[i + 1]
+                        duration = bar_items[i + 2]
                         bar_seq.append(torch.LongTensor([bar_embed, pos_embed, tempo_cls, tempo_val, pitch, duration, velocity]))
                         i += 3
                     else:
@@ -302,6 +320,9 @@ class Melody_Arrangement_Dataset:
         (duartion:)
         (velocity:)
         """
+        feat_dim = MuMIDI_EventSeq.feat_dims()
+        shift = [1 + feat_dim['note_on'] + feat_dim['note_duration'], 1, 1 + feat_dim['note_on'] ]
+        bar_idx = MuMIDI_EventSeq.feat_ranges()['bar'][0]
         batch = len(input)
         batch_seqs = []
         batch_masks = []
@@ -318,18 +339,24 @@ class Melody_Arrangement_Dataset:
                 while i < len(bar_items):
                     # item = np.zeros(4)
                     # mask = np.zeros(4)
-                    if MuMIDI_EventSeq.check('position', bar_items[i]):
+                    if MuMIDI_EventSeq.check('bar', bar_items[i]):
+                        item  = torch.LongTensor([bar_idx - shift[0], 0, 0])
+                        mask = torch.LongTensor([1, 0, 0])
+                        bar_seq.append(item)
+                        bar_seq_mask.append(mask)
+                        i += 1
+                    elif MuMIDI_EventSeq.check('position', bar_items[i]):
                         n_pos = bar_items[i]
                         pos_embed = n_pos
-                        item = torch.LongTensor([pos_embed, 0, 0])
+                        item = torch.LongTensor([pos_embed - shift[0], 0, 0])
                         mask = torch.LongTensor([1, 0, 0])
                         bar_seq.append(item)
                         bar_seq_mask.append(mask)
                         i += 1
                     elif i < len(bar_items) and MuMIDI_EventSeq.check('tempo_class', bar_items[i]) \
                             and MuMIDI_EventSeq.check('tempo_value', bar_items[i + 1]):
-                        tempo_cls = bar_items[i]
-                        tempo_val = bar_items[i + 1]
+                        tempo_cls = bar_items[i] - shift[0]
+                        tempo_val = bar_items[i + 1] - shift[0]
                         item = torch.LongTensor([tempo_cls, 0, 0])
                         mask = torch.LongTensor([1, 0, 0])
                         bar_seq.append(item)
@@ -340,12 +367,12 @@ class Melody_Arrangement_Dataset:
                         bar_seq.append(item)
                         bar_seq_mask.append(mask)
                         i += 2
-                    elif i+2 < len(bar_items) and MuMIDI_EventSeq.check('note_on', bar_items[i]) \
-                            and MuMIDI_EventSeq.check('note_duration', bar_items[i + 1]) \
-                            and MuMIDI_EventSeq.check('note_velocity', bar_items[i + 2]):
-                        pitch = bar_items[i]
-                        duration = bar_items[i + 1]
-                        velocity = bar_items[i + 2]
+                    elif i+2 < len(bar_items) and MuMIDI_EventSeq.check('note_velocity', bar_items[i]) \
+                            and MuMIDI_EventSeq.check('note_on', bar_items[i + 1]) \
+                            and MuMIDI_EventSeq.check('note_duration', bar_items[i + 2]):
+                        velocity = bar_items[i] - shift[0]
+                        pitch = bar_items[i + 1] - shift[1]
+                        duration = bar_items[i + 2] - shift[2]
                         item = torch.LongTensor([pitch, duration, velocity])
                         mask = torch.LongTensor([1, 1, 1])
 
@@ -353,7 +380,7 @@ class Melody_Arrangement_Dataset:
                         bar_seq_mask.append(mask)
                         i += 3
                     else:
-                        pitch = bar_items[i]
+                        pitch = bar_items[i] - shift[0]
                         item = torch.LongTensor([pitch, 0, 0])
                         mask = torch.LongTensor([1, 0, 0])
                         bar_seq.append(item)
@@ -395,6 +422,8 @@ class Melody_Arrangement_Dataset:
         for melody_seq, arrange_seq in data:
             melody_seq_bar = MuMIDI_EventSeq.segmentation(melody_seq)
             arrange_seq_bar = MuMIDI_EventSeq.segmentation(arrange_seq)
+            for i in range(len(arrange_seq_bar)):
+                arrange_seq_bar[i] = np.append(arrange_seq_bar[i], MuMIDI_EventSeq.feat_ranges()['bar'][0])
             s.append(melody_seq_bar)
             t.append(arrange_seq_bar)
         src, src_mask = Melody_Arrangement_Dataset.get_mask(s, 0)
