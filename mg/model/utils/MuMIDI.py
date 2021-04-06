@@ -249,8 +249,11 @@ def item2event(groups):
                     value=index,
                     # value='{}/{}'.format(index+1, DEFAULT_FRACTION),
                     text='{}'.format(item.start)))
-            if item.track != last_track and item.track != '':
-                last_track = item.track
+
+
+            if item.name == 'note':
+                if item.track != last_track and item.track != '':
+                    last_track = item.track
                 events.append(Event(
                     name=f'track_{item.track}',
                     time=item.start,
@@ -258,7 +261,6 @@ def item2event(groups):
                     # value='{}/{}'.format(index+1, DEFAULT_FRACTION),
                     text='{}'.format(item.start)))
 
-            if item.name == 'note':
                 # velocity
                 velocity_index = np.searchsorted(
                     DEFAULT_VELOCITY_BINS,
@@ -401,6 +403,12 @@ class MuMIDI_EventSeq:
         return idxs_feat
 
     @staticmethod
+    def get_track_id(track_name):
+        feat_rang = MuMIDI_EventSeq.feats_ranges()
+        return feat_rang[track_name]
+
+
+    @staticmethod
     def check(feat_name, idx):
         feat_range = MuMIDI_EventSeq.feat_ranges()
         if idx in feat_range[feat_name]:
@@ -464,6 +472,12 @@ class MuMIDI_EventSeq:
         arrange_events = item2event(groups)
 
         return melody_events, arrange_events
+
+    @staticmethod
+    def merge_split_events(melody_events, arrange_events):  # detail
+
+        return melody_events, arrange_events
+
 
     @staticmethod
     def filter_melody(arr):

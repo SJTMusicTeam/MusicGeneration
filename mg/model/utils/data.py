@@ -416,6 +416,28 @@ class Melody_Arrangement_Dataset:
         # print(pad_data.shape)
         return pad_data, pad_data_mask#, pad_data_len
 
+    @staticmethod
+    def get_tar_bar_mask(batch ,n_bar):#place_hodler for embedding
+        """
+        :param id: index of bar
+        :return: bar mask for get bar embedding
+        [batch , 1, 7]
+        """
+        pad_data = torch.zeros((batch, 7))
+        for batch_id in range(batch):
+            pad_data[batch_id, : ] = torch.LongTensor([Melody_Arrangement_Dataset.bar_id(n_bar), \
+                                                            Melody_Arrangement_Dataset.pos_id(0), \
+                                                            0, 0, Melody_Arrangement_Dataset.bar(), 0, 0])
+        return pad_data.reshape(batch, 1, 7).long()
+
+    @staticmethod
+    def get_next_mask(batch, seq):
+        # [batch , 1, 7]
+        pad_data = torch.zeros((batch, 7))
+        for i in range(batch):
+            pad_data[i, : ] = torch.LongTensor(seq[i])
+        return pad_data.reshape(batch, 1, 7).long()
+
     def FastBatchify(self, data):
         s = []
         t = []
@@ -465,26 +487,26 @@ class Melody_Arrangement_Dataset:
 
 
 if __name__ == '__main__':
-    pp = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split/'
-    pt = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split/train.pth'
-    pv = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split/vaild.pth'
+    pp = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_MuMIDI/'
+    pt = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_MuMIDI/train.pth'
+    pv = '/data2/qt/MusicGeneration/egs/dataset/lmd_matched_MuMIDI/valid.pth'
     paths = list(find_files_by_extensions(pp, ['.data']))
 
-    # dataset = Melody_Arrangement_Dataset(pp, paths=paths[:-200], verbose=True)
-    # Melody_Arrangement_Dataset.save_file(dataset, pt)
+    dataset = Melody_Arrangement_Dataset(pp, paths=paths[:-200], verbose=True)
+    Melody_Arrangement_Dataset.save_file(dataset, pt)
     # re_dataset = Melody_Arrangement_Dataset()
-    re_dataset = Melody_Arrangement_Dataset.load_file(pv)
-    seq = re_dataset.melody_seqs
+    # re_dataset = Melody_Arrangement_Dataset.load_file(pv)
+    # seq = re_dataset.melody_seqs
     # print(max(seq))
-    seq = sorted(seq, key = lambda i:len(i))
-    print(f'melody_seq={[len(i) for i in seq]}')
-    seq = re_dataset.arrange_seqs
+    # seq = sorted(seq, key = lambda i:len(i))
+    # print(f'melody_seq={[len(i) for i in seq]}')
+    # seq = re_dataset.arrange_seqs
     # print(max(seq))
-    seq = sorted(seq, key = lambda i:len(i))
-    print(f'arrange_seq={[len(i) for i in seq]}')
+    # seq = sorted(seq, key = lambda i:len(i))
+    # print(f'arrange_seq={[len(i) for i in seq]}')
 
-    # dataset = Melody_Arrangement_Dataset(pp, paths=paths[-200:], verbose=True)
-    # Melody_Arrangement_Dataset.save_file(dataset, pv)
+    dataset = Melody_Arrangement_Dataset(pp, paths=paths[-200:], verbose=True)
+    Melody_Arrangement_Dataset.save_file(dataset, pv)
     # print(dataset.melody_seqs)
     # print(dataset.__repr__())
     # re_dataset = Melody_Arrangement_Dataset.load_file(pv)

@@ -48,11 +48,11 @@ class PoPMAG_RNN(nn.Module):
 
         self.embed_shift = [1 + feat_dim['note_on'] + feat_dim['note_duration'], 1, 1 + feat_dim['note_on'] ]
         # print([self.output_dim - 1 - feat_dim['note_on'] - feat_dim['note_velocity'], feat_dim['note_on'], feat_dim['note_duration']])
-        self.out_len = [self.output_dim - 1 - feat_dim['note_on'] - feat_dim['note_velocity'], feat_dim['note_on'], feat_dim['note_duration']]
+        self.out_len = [self.output_dim - 1 - feat_dim['note_on'] - feat_dim['note_duration'], feat_dim['note_on'] , feat_dim['note_duration']]
         self.mx_dim = max( self.out_len )
-        self.output_fc.append( nn.Linear(hidden_dim, self.output_dim - 1 - feat_dim['note_on'] - feat_dim['note_velocity']) )
-        self.output_fc.append( nn.Linear(hidden_dim, feat_dim['note_on']) )
-        self.output_fc.append( nn.Linear(hidden_dim, feat_dim['note_duration']) )
+        self.output_fc.append( nn.Linear(hidden_dim, self.out_len[0]) )
+        self.output_fc.append( nn.Linear(hidden_dim, self.out_len[1]) )
+        self.output_fc.append( nn.Linear(hidden_dim, self.out_len[2]) )
 
         self.output_fc_activation = nn.Softmax(dim=-1)
 
@@ -204,7 +204,7 @@ class PoPMAG_RNN(nn.Module):
     def decoder_input(self, tar, hidden, tar_mask):
         """
         :param tar: [batch_size, bar_len, embed_size]
-        :param hidden: [batch_size, rnn_layers * hidden_dim]
+        :param hidden: [rnn_layers, batch_size, hidden_dim]
         :param tar_mask: [batc_size, bar_len]
         :return:
         """
@@ -212,39 +212,87 @@ class PoPMAG_RNN(nn.Module):
         packed_output, state = self.decoder(packed_tar, hidden)
         outputs, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
         return outputs, state
-    #
-    # def decoder_one_step(self, tar, hidden, tar_mask):
-    #     """
-    #     :param tar: [batch_size, bar_len, embed_size]
-    #     :param hidden: [batch_size, rnn_layers * hidden_dim]
-    #     :param tar_mask: [batc_size, bar_len]
-    #     :return:
-    #     """
-    #     flag = 0
-    #     batch = tar.shape[0]
-    #     lens = np.zeros(batch)
-    #
-    #     batch_output = defaultdict(list)
-    #     for idx in range(batch):
-    #         batch_output[idx] = tar.numpy().tolist()
-    #
-    #     tar = tar.permute(1, 0, 2).contiguous()
-    #     while flag < batch:
-    #         output, state = self.decoder(tar, hidden)
-    #         step_output = self.final_predict(output) # [1, batch, 3, event_dim]
-    #         event_type = self._sample_event(step_output[:, :, 1, :])
-    #         for idx in range(batch):
-    #             if MuMIDI_EventSeq.check(event_type, 'bar'):
-    #                 if lens[idx] == 0:
-    #                     lens[idx] = len(batch_output[idx])
-    #                     flag += 1
-    #
-    #
-    #
-    #
-    #     return outputs, state
 
-    def final_predict(self, input):
+    def decoder_one_step(self, n_bar, hidden):
+        """
+        :param tar: n_bar
+        :param hidden: [batch_size, rnn_layers * hidden_dim]
+        :return:
+        """
+        flag = 0
+        batch = hidden.shape[1]
+        lens = np.zeros(batch)
+
+        batch_output = defaultdict(list)
+        for idx in range(batch):
+            batch_output[idx] = [ Melody_Arrangement_Dataset.bar() ]
+
+        tar = Melody_Arrangement_Dataset.get_tar_bar_mask(batch, n_bar)
+
+        bar_embed = tar[0, 0, 0]
+        pos_embed = 0
+        tempo_cls = 0
+        tempo_val = 0
+        pitch = 0
+        duration = 0
+        velocity = 0
+        track = -1
+
+        tar = tar.to(device)
+        tar = self.compression(tar)
+        tar = tar.permute(1, 0, 2).contiguous()
+        max_len = 200
+        step = 0
+        while flag < batch and step < max_len:
+            step += 1
+            seq = []
+            output, state = self.decoder(tar, hidden)
+            step_output = self.final_predict(output) # [1, batch, 3, event_dim]
+            event_type = self._sample_event(step_output[:, :, 0, :]).squeeze()
+            # print(f'event_type.shape={event_type.shape}')
+            for idx in range(batch):
+                event_type[idx] += self.embed_shift[0]
+
+                if MuMIDI_EventSeq.check('bar', event_type[idx]):
+                    if lens[idx] == 0:
+                        lens[idx] = len(batch_output[idx])
+                        flag += 1
+                if flag == batch:
+                    break
+                if lens[idx] != 0:
+                    continue
+                batch_output[idx].append(event_type[idx])
+
+                if MuMIDI_EventSeq.check('position', event_type[idx]):
+                    pos_embed = event_type[idx]
+                elif MuMIDI_EventSeq.check('tempo_class', event_type[idx]):
+                    tempo_cls = event_type[idx]
+                elif MuMIDI_EventSeq.check('tempo_value', event_type[idx]):
+                    tempo_val = event_type[idx]
+                elif MuMIDI_EventSeq.check('chord', event_type[idx]):
+                    pitch = event_type[idx]
+                elif MuMIDI_EventSeq.check('track', event_type[idx]):
+                    pitch = event_type[idx]
+                    track = event_type[idx]
+                elif MuMIDI_EventSeq.check('note_velocity', event_type[idx]):
+                    velocity = event_type[idx]
+                    pitch = self._sample_event(step_output[:, idx, 1, :]).squeeze()
+                    if track == MuMIDI_EventSeq.get_track_id('drum'):
+                        pitch += 128
+                    batch_output[idx].append(pitch + self.embed_shift[1])
+                    duation = self._sample_event(step_output[:, idx, 2, :]).squeeze()
+                    batch_output[idx].append(duation + self.embed_shift[2])
+
+                seq.append(torch.LongTensor([bar_embed, pos_embed, tempo_cls, tempo_val, pitch, duration, velocity]))
+            tar = Melody_Arrangement_Dataset.get_next_mask(batch, seq)
+            tar = tar.to(device)
+            tar = self.compression(tar)
+            tar = tar.permute(1, 0, 2).contiguous()
+            hidden = state
+
+        return batch_output, state
+
+    def final_predict(self, input):#velocity, on, duration
         # print(f'input_shape={input.shape}')
         batch, stpes, _ = input.shape
         prob = [  self.output_fc_activation(layer(input)) for layer in self.output_fc ]
@@ -304,78 +352,55 @@ class PoPMAG_RNN(nn.Module):
 
         return batch_outputs
 
-    # def generate(self, init, steps, events=None, greedy=1.0,
-    #              temperature=1.0, teacher_forcing_ratio=1.0, output_type='index', verbose=False):
-    #     # init [batch_size, init_dim]
-    #     # events [steps, batch_size] indeces
-    #     # controls [1 or steps, batch_size, control_dim]
-    #
-    #     batch_size = init.shape[0]
-    #     assert init.shape[1] == self.init_dim
-    #     hidden = self.init_to_hidden(init)
-    #
-    #     outputs = []
-    #
-    #
-    #     output, hidden = self.gen_forward(steps, hidden) #forward one bar
-    #
-    #     use_greedy = np.random.random() < greedy
-    #     event = self._sample_event(output, greedy=use_greedy,
-    #                                temperature=temperature)
-    #
-    #     if output_type == 'index':
-    #         outputs.append(event)
-    #     elif output_type == 'softmax':
-    #         outputs.append(self.output_fc_activation(output))
-    #     elif output_type == 'logit':
-    #         outputs.append(output)
-    #     else:
-    #         assert False
-    #
-    #     if use_teacher_forcing and step < steps - 1:  # avoid last one
-    #         if np.random.random() <= teacher_forcing_ratio:
-    #             event = events[step].unsqueeze(0)
-    #
-    #     return torch.cat(outputs, 0)
+
+    def generate_arrangement(self, init, src, src_mask, n_target_bar):
+
+        feat_dim = MuMIDI_EventSeq.feat_ranges()
+
+        batch = len(init)
+        # random start
+        # hidden [rnn_layers, batch_size, hidden_dim]
+        # src  [batch , bar_num , bar_len * embedding]
+        # src_mask  [batch , bar_num]
+        # tar  [batch , bar_num', bar_len', embedding]
+        # tar_mask  [batch , bar_num']
+        # words = []
+        # for _ in range(batch):
+        #     ws = [ feat_dim['bar'][0] ]
+        #
+        #     tempo_classes = feat_dim['tempo_class']
+        #     tempo_values = feat_dim['tempo_value']
+        #     tracks = feat_dim['track'][1:]
+        #     ws.append(feat_dim['position'][1])
+        #     ws.append(np.random.choice(tempo_classes))
+        #     ws.append(np.random.choice(tempo_values))
+        #     ws.append(np.random.choice(tracks))
+        #     words.append(ws)
+        # tar, tar_mask = Melody_Arrangement_Dataset.get_mask(words, 0)
+
+        src_bar_nums = src.shape[1]
+        bar_nums = src_bar_nums
+        # init [batch_size, init_dim]
+        hidden = self.init_to_hidden(init)
+        batch_outputs = defaultdict(list)
+        for step in range(bar_nums):
+            if step < src_bar_nums:
+                encoder_output, encoder_hidden = self.encoder_input(src[:, step, :, :], hidden, src_mask[:, step])
+
+            if step < n_target_bar:
+
+                decoder_output, decoder_hidden = self.decoder_one_step(bar_nums, encoder_hidden)
+                # print(f'decoder_output.shape={decoder_output.shape}')
+                # print(f'decoder_hidden.shape={decoder_hidden.shape}')
+
+            print(f'success generate for {step + 1} bars!')
+            hidden = encoder_hidden + decoder_hidden
+            # print(f'batch={batch}')
+            # print(f'len_dec={len(decoder_output)}')
+            # print(f'bat_out={len(batch_outputs)}')
+            print(batch_outputs)
+            print(decoder_output)
+            batch_outputs = [ batch_outputs[i].extend(decoder_output[i]) for i in range(batch)]
 
 
-    # def generate_arrangement(self, init, src, src_mask, n_target_bar):
-    #
-    #     feat_dim = MuMIDI_EventSeq.feat_ranges()
-    #     #random start
-    #     words = []
-    #     for _ in range(self.batch_size):
-    #         ws = [ feat_dim['bar'][0] ]
-    #
-    #         tempo_classes = feat_dim['tempo_class']
-    #         tempo_values = feat_dim['tempo_value']
-    #         tracks = feat_dim['track'][1:]
-    #         ws.append(feat_dim['position'][1])
-    #         ws.append(np.random.choice(tempo_classes))
-    #         ws.append(np.random.choice(tempo_values))
-    #         ws.append(np.random.choice(tracks))
-    #         words.append(ws)
-    #     tar, tar_mask = Melody_Arrangement_Dataset.get_mask(words, 0)
-    #
-    #     src_bar_nums = src.shape[1]
-    #     bar_nums = src_bar_nums
-    #     # init [batch_size, init_dim]
-    #     hidden = self.init_to_hidden(init)
-    #
-    #     for step in range(bar_nums):
-    #         if step < src_bar_nums:
-    #             encoder_output, encoder_hidden = self.encoder_input(src[:, step, :, :], hidden, src_mask[:, step])
-    #
-    #         if step < n_target_bar:
-    #
-    #             decoder_output, decoder_hidden = self.decoder_one_step(tar[:, step, :, :], encoder_hidden, tar_mask[:, step])
-    #             # print(f'decoder_output.shape={decoder_output.shape}')
-    #             # print(f'decoder_hidden.shape={decoder_hidden.shape}')
-    #
-    #         hidden = encoder_hidden + decoder_hidden
-    #         res = self.final_predict(decoder_output)
-    #         lens = res.shape[1]
-    #         batch_outputs[:, step, :lens, :, :] = res
-    #         # batch_outputs.append(res)
-    #
-    #     return batch_outputs
+        return batch_outputs

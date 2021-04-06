@@ -30,7 +30,7 @@ def get_options():
     parser.add_option('-d', '--dataset',
                       dest='data_path',
                       type='string',
-                      default='/data2/qt/MusicGeneration/egs/dataset/lmd_matched_split/train.pth')
+                      default='/data2/qt/MusicGeneration/egs/dataset/lmd_matched_MuMIDI/train.pth')
 
     parser.add_option('-e', '--epochs',
                       dest='epochs',
