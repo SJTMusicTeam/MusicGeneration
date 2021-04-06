@@ -149,7 +149,7 @@ print('-' * 70)
 def load_model():
     global model_config, device, learning_rate
     model = PoPMAG_RNN(**model_config)
-    # model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/PoPMAG_RNN/save_model/segment_512_3_1_epoch_239.pth'))
+    # model.load_state_dict(torch.load('/data2/qt/MusicGeneration/mg/model/PoPMAG_RNN/save_model/256_256_2_epoch_0_599.pth'))
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     return model, optimizer
@@ -224,6 +224,9 @@ for epoch in range(epochs):
             # print(f'src={src.shape}')
             # print(f'tar={tar.shape}')
             # print(f'label={label.shape}')
+            # print(f'tar={tar[0, 0, 0]}')
+            # print(f'label={label[0, 0, 0]}')
+            # print(f'label_mask={label_mask[0, 0, 0]}')
 
             comp_src = model.compression(src)
             comp_tar = model.compression(tar)
@@ -244,9 +247,11 @@ for epoch in range(epochs):
             init.detach_()
             # print(f'output_shape={outputs.shape}')
             # print(f'outputs.dev={outputs.device}, label.dev={label.device}')
-
+            # output = [batch, mx_bar_nums, mx_bar_events, 3, mx_event_dim]
+            # label = [batch, mx_bar_nums, mx_bar_events, 3]
             loss = loss_function(outputs.view(-1, model.mx_dim), label.view(-1))
             # loss = [loss_function(outputs[i], label[:, :, :, i]) * label_mask[:, :, :, i] for i in range(3)]
+
             # print(f'loss.shape={loss.shape}')
             loss = torch.mean(loss * label_mask.view(-1))
             # loss = torch.mean(loss)

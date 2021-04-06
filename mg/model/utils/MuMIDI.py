@@ -380,7 +380,7 @@ class MuMIDI_EventSeq:
         feat_dims['track'] = len(DEFAULT_TRACKS)#354-359
         feat_dims['tempo_class'] = len(DEFAULT_TEMPO_INTERVALS)#360-362
         feat_dims['tempo_value'] = len(DEFAULT_TEMPO_INTERVALS[0])#363-422
-        feat_dims['chord'] = len(chord_map)#423-472
+        feat_dims['chord'] = len(chord_map)#423-483
         return feat_dims
 
     @staticmethod
@@ -404,8 +404,9 @@ class MuMIDI_EventSeq:
 
     @staticmethod
     def get_track_id(track_name):
-        feat_rang = MuMIDI_EventSeq.feats_ranges()
-        return feat_rang[track_name]
+        feat_rang = MuMIDI_EventSeq.feat_ranges()
+        return feat_rang['track'][0] + tracks_idx[track_name]
+        # return feat_rang[track_name]
 
 
     @staticmethod
@@ -712,6 +713,13 @@ if __name__ == '__main__':
     pa = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_bef.midi'
     pb = '/data2/qt/MusicGeneration/egs/dataset/tmp_res/test_mumidi_aft.midi'
     melody_events, arrange_events = MuMIDI_EventSeq.extract_split_events(pp)
+    print(melody_events[:30])
+    words = MuMIDI_EventSeq.to_array(melody_events[:30])
+    print(words)
+    print(arrange_events[:30])
+    words = MuMIDI_EventSeq.to_array(arrange_events[:30])
+    print(words)
+
     #events = preprocess_REMI_event(pp)
     # events = MuMIDI_EventSeq.extract_events(pp)
     # print(events)

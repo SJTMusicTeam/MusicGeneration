@@ -248,7 +248,7 @@ class PoPMAG_RNN(nn.Module):
             seq = []
             output, state = self.decoder(tar, hidden)
             step_output = self.final_predict(output) # [1, batch, 3, event_dim]
-            event_type = self._sample_event(step_output[:, :, 0, :]).squeeze()
+            event_type = self._sample_event(step_output[:, :, 0, :]).squeeze(0)
             # print(f'event_type.shape={event_type.shape}')
             for idx in range(batch):
                 event_type[idx] += self.embed_shift[0]
@@ -270,20 +270,22 @@ class PoPMAG_RNN(nn.Module):
                 elif MuMIDI_EventSeq.check('tempo_value', event_type[idx]):
                     tempo_val = event_type[idx]
                 elif MuMIDI_EventSeq.check('chord', event_type[idx]):
-                    pitch = event_type[idx]
+                    velocity = event_type[idx]
                 elif MuMIDI_EventSeq.check('track', event_type[idx]):
-                    pitch = event_type[idx]
+                    velocity = event_type[idx]#pitch
                     track = event_type[idx]
                 elif MuMIDI_EventSeq.check('note_velocity', event_type[idx]):
                     velocity = event_type[idx]
-                    pitch = self._sample_event(step_output[:, idx, 1, :]).squeeze()
+                    pitch = self._sample_event(step_output[:, idx, 1, :]).squeeze(0)
                     if track == MuMIDI_EventSeq.get_track_id('drum'):
                         pitch += 128
-                    batch_output[idx].append(pitch + self.embed_shift[1])
-                    duation = self._sample_event(step_output[:, idx, 2, :]).squeeze()
-                    batch_output[idx].append(duation + self.embed_shift[2])
+                    pitch += self.embed_shift[1]
+                    batch_output[idx].append(pitch)
+                    duation = self._sample_event(step_output[:, idx, 2, :]).squeeze(0)
+                    duation += self.embed_shift[2]
+                    batch_output[idx].append(duation)
 
-                seq.append(torch.LongTensor([bar_embed, pos_embed, tempo_cls, tempo_val, pitch, duration, velocity]))
+                seq.append(torch.LongTensor([bar_embed, pos_embed, tempo_cls, tempo_val, velocity, pitch, duration]))
             tar = Melody_Arrangement_Dataset.get_next_mask(batch, seq)
             tar = tar.to(device)
             tar = self.compression(tar)
@@ -303,6 +305,7 @@ class PoPMAG_RNN(nn.Module):
         # print(f'prob[2]_shape={prob[2].shape}')
         for i in range(batch):
             pad_pro[: , :, i, :prob[i].shape[2]] = prob[i]
+            pad_pro[: , :, i, prob[i].shape[2]:] = -1e6
         # prob = nn.utils.rnn.pack_padded_sequence(prob, self.out_len, batch_first=True, enforce_sorted=False)
         # print(f'len_prob={len(prob)}')
         # print(f'prob[0]_shape={prob[0].shape}')
@@ -389,7 +392,7 @@ class PoPMAG_RNN(nn.Module):
 
             if step < n_target_bar:
 
-                decoder_output, decoder_hidden = self.decoder_one_step(bar_nums, encoder_hidden)
+                decoder_output, decoder_hidden = self.decoder_one_step(step, encoder_hidden)
                 # print(f'decoder_output.shape={decoder_output.shape}')
                 # print(f'decoder_hidden.shape={decoder_hidden.shape}')
 
@@ -398,9 +401,10 @@ class PoPMAG_RNN(nn.Module):
             # print(f'batch={batch}')
             # print(f'len_dec={len(decoder_output)}')
             # print(f'bat_out={len(batch_outputs)}')
-            print(batch_outputs)
-            print(decoder_output)
-            batch_outputs = [ batch_outputs[i].extend(decoder_output[i]) for i in range(batch)]
+            # print(batch_outputs)
+            # print(decoder_output)
+            for i in range(batch):
+                batch_outputs[i].extend(decoder_output[i])
 
 
         return batch_outputs

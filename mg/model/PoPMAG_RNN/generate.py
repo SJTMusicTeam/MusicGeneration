@@ -25,12 +25,12 @@ def getopt():
     parser.add_option('-b', '--batch-size',
                       dest='batch_size',
                       type='int',
-                      default=3)
+                      default=1)
 
     parser.add_option('-s', '--save_path',
                       dest='save_path',
                       type='string',
-                      default='/data2/qt/MusicGeneration/mg/model/PoPMAG_RNN/save_model/256_256_2_epoch_0_4999.pth',
+                      default='/data2/qt/MusicGeneration/mg/model/PoPMAG_RNN/save_model/256_256_2_epoch_0_199.pth',
                       #default='/data2/qt/MusicGeneration/mg/model/Event_MelodyRNN/save_model/epoch_128.pth',
                       help = 'pth file containing the trained model')
 

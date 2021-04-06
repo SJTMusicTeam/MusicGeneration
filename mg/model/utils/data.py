@@ -269,7 +269,7 @@ class Melody_Arrangement_Dataset:
                         duration = bar_items[i + 2]
                         bar_seq.append(torch.LongTensor([bar_embed, pos_embed, tempo_cls, tempo_val, pitch, duration, velocity]))
                         i += 3
-                    else:
+                    else: # track/chord
                         pitch = bar_items[i]
                         i += 1
                         bar_seq.append(torch.LongTensor([bar_embed, pos_embed, tempo_cls, tempo_val, pitch, 0, 0]))
@@ -333,6 +333,7 @@ class Melody_Arrangement_Dataset:
             one_bars_masks = []
             for bar_items in bar_seqs:
                 n_bar += 1
+
                 i = 1
                 bar_seq = []
                 bar_seq_mask = []
@@ -373,15 +374,15 @@ class Melody_Arrangement_Dataset:
                         velocity = bar_items[i] - shift[0]
                         pitch = bar_items[i + 1] - shift[1]
                         duration = bar_items[i + 2] - shift[2]
-                        item = torch.LongTensor([pitch, duration, velocity])
+                        item = torch.LongTensor([velocity, pitch, duration])
                         mask = torch.LongTensor([1, 1, 1])
 
                         bar_seq.append(item)
                         bar_seq_mask.append(mask)
                         i += 3
                     else:
-                        pitch = bar_items[i] - shift[0]
-                        item = torch.LongTensor([pitch, 0, 0])
+                        velocity = bar_items[i] - shift[0]
+                        item = torch.LongTensor([velocity, 0, 0])
                         mask = torch.LongTensor([1, 0, 0])
                         bar_seq.append(item)
                         bar_seq_mask.append(mask)
