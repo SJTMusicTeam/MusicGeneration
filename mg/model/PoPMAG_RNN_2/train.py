@@ -10,9 +10,9 @@ import torch.utils.data as Data
 sys.path.append('/data2/qt/MusicGeneration/mg/model/')
 
 import utils.shared as utils
-import PoPMAG_RNN.config as config
+import PoPMAG_RNN_2.config as config
 from utils.data import Melody_Arrangement_Dataset
-from PoPMAG_RNN.network import PoPMAG_RNN
+from PoPMAG_RNN_2.network import PoPMAG_RNN
 from utils.MuMIDI import MuMIDI_EventSeq
 import Event_MelodyRNN.config
 # ========================================================================

@@ -7,7 +7,7 @@ from collections import namedtuple
 from utils.MuMIDI import MuMIDI_EventSeq
 import numpy as np
 from progress.bar import Bar
-from PoPMAG_RNN .config import device
+from PoPMAG_RNN_2 .config import device
 from collections import defaultdict
 import sys
 sys.path.append('/data2/qt/MusicGeneration/mg/model/')
