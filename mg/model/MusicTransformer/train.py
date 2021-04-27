@@ -1,5 +1,5 @@
-import sys
-sys.path.append('/data2/qt/MusicGeneration/mg/model/Musictransformer')
+# import sys
+# sys.path.append('/data2/qt/MusicGeneration/mg/model/Musictransformer')
 from network import MusicTransformer
 from metrics import *
 from criterion import SmoothCrossEntropyLoss, CustomSchedule
@@ -122,12 +122,14 @@ print('-' * 70)
 # ========================================================================
 # Load model and dataset
 # ========================================================================
-
+delta = 0
 def load_model():
-    global model_config, device
+    global model_config, device, delta
     model = MusicTransformer(**model_config)
     if load_path is not None:
+        delta = int(load_path.split('/')[-1].split('-')[1])+100
         model.load_state_dict(torch.load(load_path))
+        print(f'Success load {load_path}')
     model.to(device)
     return model
 
@@ -159,8 +161,8 @@ print('-' * 70)
 def save_model(epoch, acc = 0.0):
     global mt, save_path
     #torch.save(single_mt.state_dict(), args.model_dir+'/train-{}-{}.pth'.format(e, eval_metrics['accuracy']))
-    print('Saving to', save_path+'train-{}-{}.pth'.format(epoch, acc))
-    torch.save(mt.state_dict(),  save_path+'train-{}-{}.pth'.format(epoch, acc))
+    print('Saving to', save_path+'train-{}-{}.pth'.format(epoch+delta, acc))
+    torch.save(mt.state_dict(),  save_path+'train-{}-{}.pth'.format(epoch+delta, acc))
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -202,11 +204,10 @@ opt = optim.Adam(mt.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9)
 scheduler = CustomSchedule(config.embedding_dim, optimizer=opt)
 
 # multi-GPU set
-if torch.cuda.device_count() > 1:
-    single_mt = mt
+single_mt = mt
+if torch.cuda.device_count() > 1 and multi_gpu:
     mt = torch.nn.DataParallel(mt, output_device=torch.cuda.device_count()-1)
-else:
-    single_mt = mt
+
 
 # init metric set
 metric_set = MetricsSet({
@@ -273,16 +274,17 @@ for e in range(config.epochs):
             #     print('output switch time: {}'.format(sw_end - sw_start) )
 
             # result_metrics = metric_set(sample, batch_y)
-        # single_mt.eval()
-        # eval_x, eval_y = dataset.slide_seq2seq_batch(2, config.max_seq, 'eval')
-        # eval_x = torch.from_numpy(eval_x).contiguous().to(config.device, dtype=torch.int)
-        # eval_y = torch.from_numpy(eval_y).contiguous().to(config.device, dtype=torch.int)
-        #
-        # eval_preiction, weights = single_mt.forward(eval_x)
-        #
-        # eval_metrics = metric_set(eval_preiction, eval_y)
-        #
-        # ##### save_model(e, eval_metrics['accuracy'])
+        single_mt.eval()
+        eval_x, eval_y = dataset.slide_seq2seq_batch(2, config.max_seq, 'valid')
+        eval_x = torch.from_numpy(eval_x).contiguous().to(config.device, dtype=torch.int)
+        eval_y = torch.from_numpy(eval_y).contiguous().to(config.device, dtype=torch.int)
+
+        eval_preiction, weights = single_mt.forward(eval_x)
+
+        eval_metrics = metric_set(eval_preiction, eval_y)
+
+        if (e+1) % 50 == 0:
+            save_model(e, eval_metrics['accuracy'])
 
         # if b == 0:
         #     # train_summary_writer.add_histogram("target_analysis", batch_y, global_step=e)
@@ -299,13 +301,13 @@ for e in range(config.epochs):
         print('\n====================================================')
         print('Epoch/Batch: {}/{}'.format(e, b))
         print('Train >>>> Loss: {:6.6}, Accuracy: {}'.format(metrics['loss'], metrics['accuracy']))
-        # print('Eval >>>> Loss: {:6.6}, Accuracy: {}'.format(eval_metrics['loss'], eval_metrics['accuracy']))
+        print('Eval >>>> Loss: {:6.6}, Accuracy: {}'.format(eval_metrics['loss'], eval_metrics['accuracy']))
 
     except KeyboardInterrupt:
         save_model(e)
         break
 
-save_model('final')
+save_model(epochs)
 # eval_summary_writer.close()
 # train_summary_writer.close()
 

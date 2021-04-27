@@ -1,4 +1,8 @@
 import numpy as np
+import copy
+import itertools
+import collections
+from pretty_midi import PrettyMIDI, Note, Instrument
 
 DEFAULT_SAVING_PROGRAM = 1
 DEFAULT_LOADING_PROGRAMS = range(128)
@@ -13,7 +17,7 @@ DEFAULT_NORMALIZATION_BASELINE = 60  # C4
 
 USE_VELOCITY = True
 BEAT_LENGTH = 60 / DEFAULT_TEMPO
-DEFAULT_TIME_SHIFT_BINS = 1.15 ** np.arange(32) / 65
+DEFAULT_TIME_SHIFT_BINS = 0.01 * np.arange(1,101)#1.15 ** np.arange(32) / 65 # 65
 DEFAULT_VELOCITY_STEPS = 32
 DEFAULT_NOTE_LENGTH = BEAT_LENGTH * 2
 MIN_NOTE_LENGTH = BEAT_LENGTH / 2
@@ -417,3 +421,4 @@ if __name__ == '__main__':
     # c = ControlSeq.recover_compressed_array(pickle.load(open('/tmp/cs-compressed.data', 'rb')))
 
     print('Done')
+

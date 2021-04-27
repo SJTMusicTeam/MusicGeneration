@@ -2,6 +2,7 @@ import utils
 import random
 import pickle
 import numpy as np
+import torch
 
 import config
 
@@ -15,8 +16,10 @@ class Data:
         #     'test': self.file_filter(self.files[int(len(self.files) * 0.9):], max_length),
         # }
         self.file_dict = {}
-        for item in ['train', 'eval', 'test']:
-            self.files = list(utils.find_files_by_extensions(dir_path+'_'+item+'/', ['.pickle']))[:2]
+        for item in ['train', 'valid', 'test']:
+            # print(dir_path+item+'_processed/')
+            self.files = list(utils.find_files_by_extensions(dir_path+'processed_'+item+'/', ['.data']))
+            # print(self.files[:5])
             self.file_dict[item] = self.file_filter(self.files, max_length)
         self._seq_file_name_idx = 0
         self._seq_idx = 0
@@ -24,16 +27,16 @@ class Data:
         pass
 
     def __repr__(self):
-        return f"<class Data has train: {len(self.file_dict['train'])}, val: {len(self.file_dict['eval'])},test: {len(self.file_dict['test'])} files>"
+        return f"<class Data has train: {len(self.file_dict['train'])}, val: {len(self.file_dict['valid'])},test: {len(self.file_dict['test'])} files>"
 
 
     def file_filter(self, files, max_length):
         filtered_data = []
         for fname in files:
-            with open(fname, 'rb') as f:
-                data = pickle.load(f)
-                if max_length <= len(data):
-                    filtered_data.append(fname)
+            # print(fname)
+            data = torch.load(fname)
+            if max_length <= len(data):
+                filtered_data.append(fname)
         return filtered_data
 
     def batch(self, batch_size, length, mode='train'):
@@ -43,7 +46,7 @@ class Data:
             self._get_seq(file, length)
             for file in batch_files
         ]
-        return np.array(batch_data)  # batch_size, seq_len
+        return np.array(batch_data, dtype=np.int16)  # batch_size, seq_len
 
     def seq2seq_batch(self, batch_size, length, mode='train'):
         data = self.batch(batch_size, length * 2, mode)
@@ -91,8 +94,7 @@ class Data:
                 print('iter intialized')
 
     def _get_seq(self, fname, max_length=None):
-        with open(fname, 'rb') as f:
-            data = pickle.load(f)
+        data = torch.load(fname)
         if max_length is not None:
             if max_length <= len(data):
                 start = random.randrange(0,len(data) - max_length)

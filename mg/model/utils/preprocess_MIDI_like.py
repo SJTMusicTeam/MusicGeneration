@@ -49,5 +49,4 @@ if __name__ == '__main__':
     preprocess_midi_files_under(
         midi_root=sys.argv[1],
         save_dir=sys.argv[2],
-        num_workers=int(sys.argv[3],
-        type='event'))
+        num_workers=int(sys.argv[3]))
