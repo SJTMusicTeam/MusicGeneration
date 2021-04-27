@@ -2,7 +2,7 @@
 
 ## Feature Extraction
 
-this porject provide following repercussions for midi format files:
+this porject provide following representation for midi format files:
 
 * MIDI-like
 * REMI
