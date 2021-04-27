@@ -2,6 +2,14 @@ import os
 import numpy as np
 from utils.sequence import EventSeq, ControlSeq
 
+def walk(folder_name):
+    files = []
+    for p, d, f in os.walk(folder_name):
+        for file in f:
+            endname = file.split('.')[-1].lower()
+            if endname == 'mid' or endname == 'midi':
+                files.append(os.path.join(p,file))
+    return files
 
 def find_files_by_extensions(root, exts=[]):
     def _has_ext(name):

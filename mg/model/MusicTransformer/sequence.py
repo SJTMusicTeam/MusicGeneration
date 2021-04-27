@@ -4,28 +4,20 @@ import itertools
 import collections
 from pretty_midi import PrettyMIDI, Note, Instrument
 
-
-# ==================================================================================
-# Parameters
-# ==================================================================================
-
-# NoteSeq -------------------------------------------------------------------------
-
 DEFAULT_SAVING_PROGRAM = 1
 DEFAULT_LOADING_PROGRAMS = range(128)
 DEFAULT_RESOLUTION = 220
 DEFAULT_TEMPO = 120
 DEFAULT_VELOCITY = 64
-DEFAULT_PITCH_RANGE = range(21, 109)
-DEFAULT_VELOCITY_RANGE = range(21, 109) #
+DEFAULT_PITCH_RANGE = range(21, 109)  # 109-20 = 89
+DEFAULT_VELOCITY_RANGE = range(21, 109)  # 109 - 20 = 89
 DEFAULT_NORMALIZATION_BASELINE = 60  # C4
 
 # EventSeq ------------------------------------------------------------------------
 
 USE_VELOCITY = True
 BEAT_LENGTH = 60 / DEFAULT_TEMPO
-DEFAULT_TIME_SHIFT_BINS = 0.01 * np.arange(1,101)#1.15 ** np.arange(32) / 65
-# DEFAULT_TIME_SHIFT_BINS =  np.arange(1,33) / 32
+DEFAULT_TIME_SHIFT_BINS = 0.01 * np.arange(1,101)#1.15 ** np.arange(32) / 65 # 65
 DEFAULT_VELOCITY_STEPS = 32
 DEFAULT_NOTE_LENGTH = BEAT_LENGTH * 2
 MIN_NOTE_LENGTH = BEAT_LENGTH / 2
@@ -50,9 +42,9 @@ class NoteSeq:
         return NoteSeq(list(notes))
 
     @staticmethod
-    def from_midi_file(path, *args, **kwargs):
+    def from_midi_file(path, *kargs, **kwargs):
         midi = PrettyMIDI(path)
-        return NoteSeq.from_midi(midi, *args, **kwargs)
+        return NoteSeq.from_midi(midi, *kargs, **kwargs)
 
     @staticmethod
     def merge(*note_seqs):
@@ -78,8 +70,8 @@ class NoteSeq:
         midi.instruments.append(inst)
         return midi
 
-    def to_midi_file(self, path, *args, **kwargs):
-        self.to_midi(*args, **kwargs).write(path)
+    def to_midi_file(self, path, *kargs, **kwargs):
+        self.to_midi(*kargs, **kwargs).write(path)
 
     def add_notes(self, notes):
         self.notes += notes
@@ -136,7 +128,6 @@ class Event:
 
 
 class EventSeq:
-
     pitch_range = DEFAULT_PITCH_RANGE
     velocity_range = DEFAULT_VELOCITY_RANGE
     velocity_steps = DEFAULT_VELOCITY_STEPS
@@ -223,9 +214,10 @@ class EventSeq:
     @staticmethod
     def get_velocity_bins():
         n = EventSeq.velocity_range.stop - EventSeq.velocity_range.start
-        return np.arange(EventSeq.velocity_range.start,
-                         EventSeq.velocity_range.stop,
-                         n / (EventSeq.velocity_steps - 1))
+        return np.arange(
+            EventSeq.velocity_range.start,
+            EventSeq.velocity_range.stop,
+            n / (EventSeq.velocity_steps - 1))
 
     def __init__(self, events=[]):
         for event in events:
@@ -267,7 +259,6 @@ class EventSeq:
             elif event.type == 'velocity':
                 index = min(event.value, velocity_bins.size - 1)
                 velocity = velocity_bins[index]
-                # velocity = velocity_bins[24] #100
 
             elif event.type == 'time_shift':
                 time += EventSeq.time_shift_bins[event.value]
@@ -310,7 +301,6 @@ class Control:
 
 
 class ControlSeq:
-
     note_density_bins = DEFAULT_NOTE_DENSITY_BINS
     window_size = DEFAULT_WINDOW_SIZE
 
@@ -404,35 +394,31 @@ class ControlSeq:
         return np.concatenate([
             ndens,  # [steps, 1] density index
             phist  # [steps, hist_dim] 0-255
-            ], 1)  # [steps, hist_dim + 1]
-
-
+        ], 1)  # [steps, hist_dim + 1]
 
 
 if __name__ == '__main__':
-    print(DEFAULT_TIME_SHIFT_BINS)
+    import pickle, sys
 
-    """
-    import pickle
-    import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else '../../egs/dataset/maestro/train/MIDI-UNPROCESSED_01-03_R1_2014_MID--AUDIO_01_R1_2014_wav--3.midi'
+    path = sys.argv[1] if len(sys.argv) > 1 else 'dataset/sample/c_maj.mid'
 
+    print(EventSeq.dim())
 
     print('Converting MIDI to EventSeq')
     es = EventSeq.from_note_seq(NoteSeq.from_midi_file(path))
 
     print('Converting EventSeq to MIDI')
-    EventSeq.from_array(es.to_array()).to_note_seq().to_midi_file('../../egs/dataset/tmp_res/maestro_test.mid')
+    EventSeq.from_array(es.to_array()[:30]).to_note_seq().to_midi_file('test.mid')
+    print(list(es.to_array()[:30]))
 
-    print('Converting EventSeq to ControlSeq')
-    cs = ControlSeq.from_event_seq(es)
+    # print('Converting EventSeq to ControlSeq')
+    # cs = ControlSeq.from_event_seq(es)
 
-    print('Saving compressed ControlSeq')
-    pickle.dump(cs.to_compressed_array(), open('../../egs/dataset/tmp_res/compressed_test.data', 'wb'))
-
-    print('Loading compressed ControlSeq')
-    c = ControlSeq.recover_compressed_array(
-        pickle.load(open('../../egs/dataset/tmp_res/compressed_test.data', 'rb')))
+    # print('Saving compressed ControlSeq')
+    # pickle.dump(cs.to_compressed_array(), open('/tmp/cs-compressed.data', 'wb'))
+    #
+    # print('Loading compressed ControlSeq')
+    # c = ControlSeq.recover_compressed_array(pickle.load(open('/tmp/cs-compressed.data', 'rb')))
 
     print('Done')
-    """
+
