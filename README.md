@@ -1,6 +1,6 @@
 # MusicGeneration
 
-## Feature Extraction
+## Sequence Extraction
 
 this porject provide following representation for midi format files:
 

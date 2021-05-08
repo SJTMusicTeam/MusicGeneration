@@ -9,18 +9,18 @@ import config
 
 class Data:
     def __init__(self, dir_path, max_length):
-        # self.files = list(utils.find_files_by_extensions(dir_path, ['.pickle']))
-        # self.file_dict = {
-        #     'train': self.file_filter(self.files[:int(len(self.files) * 0.8)], max_length),
-        #     'eval': self.file_filter(self.files[int(len(self.files) * 0.8): int(len(self.files) * 0.9)], max_length),
-        #     'test': self.file_filter(self.files[int(len(self.files) * 0.9):], max_length),
-        # }
-        self.file_dict = {}
-        for item in ['train', 'valid', 'test']:
-            # print(dir_path+item+'_processed/')
-            self.files = list(utils.find_files_by_extensions(dir_path+'processed_'+item+'/', ['.data']))
-            # print(self.files[:5])
-            self.file_dict[item] = self.file_filter(self.files, max_length)
+        self.files = list(utils.find_files_by_extensions(dir_path, ['.data']))
+        self.file_dict = {
+            'train': self.file_filter(self.files[:int(len(self.files) * 0.8)], max_length),
+            'valid': self.file_filter(self.files[int(len(self.files) * 0.8): int(len(self.files) * 0.9)], max_length),
+            'test': self.file_filter(self.files[int(len(self.files) * 0.9):], max_length),
+        }
+        # self.file_dict = {}
+        # for item in ['train', 'valid', 'test']:
+        #     # print(dir_path+item+'_processed/')
+        #     self.files = list(utils.find_files_by_extensions(dir_path+'processed_'+item+'/', ['.data']))
+        #     # print(self.files[:5])
+        #     self.file_dict[item] = self.file_filter(self.files, max_length)
         self._seq_file_name_idx = 0
         self._seq_idx = 0
 
