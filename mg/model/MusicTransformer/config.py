@@ -13,11 +13,11 @@ pad_token = EventSeq.dim()
 # token_sos = event_dim + 1
 # token_eos = event_dim + 2
 # vocab_size = event_dim + 3
-vocab_size = EventSeq.dim()
+vocab_size = EventSeq.dim() + 1
 
 save_path = '/data2/qt/MusicGeneration/mg/model/MusicTransformer/output/'
-condition_file = '/data2/qt/MusicGeneration/egs/dataset/maestro/train/MIDI-Unprocessed_Recital1-3_MID--AUDIO_03_R1_2018_wav--1.midi'
-length = 2500
+condition_file = None#'/data2/qt/MusicGeneration/egs/dataset/maestro/train/MIDI-Unprocessed_Recital1-3_MID--AUDIO_03_R1_2018_wav--1.midi'
+length = 2000
 threshold_len = 500
 
 pickle_dir = '/data2/qt/MusicGeneration/egs/dataset/maestro/'
@@ -26,15 +26,15 @@ load_path = None
 dropout = 0.2
 debug = False
 
-num_layers = 8
+num_layers = 6
 max_seq = 2048
 embedding_dim = 256
 
 l_r = 0.0001
-batch_size = 4
+batch_size = 6
 window_size = 2048
 stride_size = 10
-accum_grad = 32
+accum_grad = 12
 label_smooth = 0.1
 epochs = 50000
 

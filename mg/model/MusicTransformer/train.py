@@ -122,16 +122,50 @@ print('-' * 70)
 # ========================================================================
 # Load model and dataset
 # ========================================================================
-delta = 0
+# check cuda
+if torch.cuda.is_available():
+    config.device = torch.device('cuda')
+else:
+    config.device = torch.device('cpu')
+
+# init metric set
+metric_set = MetricsSet({
+    'accuracy': CategoricalAccuracy(),
+    'loss': SmoothCrossEntropyLoss(config.label_smooth, config.vocab_size, config.pad_token),
+    'bucket':  LogitsBucketting(config.vocab_size)
+})
+
+start_epoch = 0
 def load_model():
-    global model_config, device, delta
+    global model_config, device, start_epoch
     model = MusicTransformer(**model_config)
-    if load_path is not None:
-        delta = int(load_path.split('/')[-1].split('-')[1])+100
-        model.load_state_dict(torch.load(load_path))
-        print(f'Success load {load_path}')
     model.to(device)
-    return model
+    opt = optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9)
+    scheduler = CustomSchedule(config.embedding_dim, optimizer=opt)
+    if load_path is not None:
+        checkpoint = torch.load(load_path)
+
+        model.load_state_dict(checkpoint['net'])
+        model.to(device)
+        opt.load_state_dict(checkpoint['optimizer'])
+        scheduler = CustomSchedule(config.embedding_dim, optimizer=opt)
+
+        start_epoch = checkpoint['epoch'] + 1
+
+        # model.load_state_dict(torch.load(load_path))
+
+        print(f'Success load {load_path}')
+        model.eval()
+        eval_x, eval_y = dataset.slide_seq2seq_batch(2, config.max_seq, 'valid')
+        eval_x = torch.from_numpy(eval_x).contiguous().to(config.device, dtype=torch.int)
+        eval_y = torch.from_numpy(eval_y).contiguous().to(config.device, dtype=torch.int)
+
+        eval_preiction, _ = model.forward(eval_x)
+
+        eval_metrics = metric_set(eval_preiction, eval_y)
+        print('Eval >>>> Loss: {:6.6}, Accuracy: {}'.format(eval_metrics['loss'], eval_metrics['accuracy']))
+
+    return model, scheduler
 
 """
 def load_dataset(limlen):
@@ -141,10 +175,16 @@ def load_dataset(limlen):
     assert dataset_size > 0
     return dataset
 """
+# load data
+print(pickle_dir)
+dataset = Data(pickle_dir, max_seq)
+print(dataset)
+
+
 
 print('Loading model')
-mt = load_model()
-print(mt)
+mt, scheduler = load_model()
+# print(mt)
 
 # print('-' * 70)
 #
@@ -159,10 +199,12 @@ print('-' * 70)
 # ------------------------------------------------------------------------
 
 def save_model(epoch, acc = 0.0):
-    global mt, save_path
+    global save_path, mt, scheduler
+    state = {'net':mt.state_dict(), 'optimizer': scheduler.optimizer.state_dict(), 'epoch': epoch}
+
     #torch.save(single_mt.state_dict(), args.model_dir+'/train-{}-{}.pth'.format(e, eval_metrics['accuracy']))
-    print('Saving to', save_path+'train-{}-{}.pth'.format(epoch+delta, acc))
-    torch.save(mt.state_dict(),  save_path+'train-{}-{}.pth'.format(epoch+delta, acc))
+    print('Saving to', save_path+'train-{}-{}.pth'.format(epoch, acc))
+    torch.save(state,  save_path+'train-{}-{}.pth'.format(epoch, acc))
     # torch.save({'model_config': model_config,
     #             'model_state': model.state_dict(),
     #             'model_optimizer_state': optimizer.state_dict()}, save_path)
@@ -172,20 +214,6 @@ def save_model(epoch, acc = 0.0):
 # ========================================================================
 # Training
 # ========================================================================
-
-
-# check cuda
-if torch.cuda.is_available():
-    config.device = torch.device('cuda')
-else:
-    config.device = torch.device('cpu')
-
-
-# load data
-print(config.pickle_dir)
-dataset = Data(config.pickle_dir, config.max_seq)
-print(dataset)
-
 
 # load model
 learning_rate = l_r
@@ -200,21 +228,11 @@ learning_rate = l_r
 #     debug=config.debug, loader_path=config.load_path
 # )
 # mt.to(config.device)
-opt = optim.Adam(mt.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9)
-scheduler = CustomSchedule(config.embedding_dim, optimizer=opt)
 
 # multi-GPU set
-single_mt = mt
-if torch.cuda.device_count() > 1 and multi_gpu:
-    mt = torch.nn.DataParallel(mt, output_device=torch.cuda.device_count()-1)
-
-
-# init metric set
-metric_set = MetricsSet({
-    'accuracy': CategoricalAccuracy(),
-    'loss': SmoothCrossEntropyLoss(config.label_smooth, config.vocab_size, config.pad_token),
-    'bucket':  LogitsBucketting(config.vocab_size)
-})
+# single_mt = mt
+# if torch.cuda.device_count() > 1 and multi_gpu:
+#     mt = torch.nn.DataParallel(mt, output_device=torch.cuda.device_count()-1)
 
 print(mt)
 print('| Summary - Device Info : {}'.format(torch.cuda.device))
@@ -231,7 +249,7 @@ current_time = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
 scheduler.optimizer.zero_grad()
 print(">> Train start...")
 idx = 0
-for e in range(config.epochs):
+for e in range(start_epoch, config.epochs):
     try:
         print(">>> [Epoch was updated]")
         for b in range(len(dataset.file_dict['train']) // config.batch_size):
@@ -274,12 +292,12 @@ for e in range(config.epochs):
             #     print('output switch time: {}'.format(sw_end - sw_start) )
 
             # result_metrics = metric_set(sample, batch_y)
-        single_mt.eval()
+        mt.eval()
         eval_x, eval_y = dataset.slide_seq2seq_batch(2, config.max_seq, 'valid')
         eval_x = torch.from_numpy(eval_x).contiguous().to(config.device, dtype=torch.int)
         eval_y = torch.from_numpy(eval_y).contiguous().to(config.device, dtype=torch.int)
 
-        eval_preiction, weights = single_mt.forward(eval_x)
+        eval_preiction, weights = mt.forward(eval_x)
 
         eval_metrics = metric_set(eval_preiction, eval_y)
 
@@ -305,6 +323,7 @@ for e in range(config.epochs):
 
     except KeyboardInterrupt:
         save_model(e)
+        print(Exception)
         break
 
 save_model(epochs)
